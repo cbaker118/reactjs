@@ -1,0 +1,67 @@
+<html 
+	xmlns="http://www.w3.org/1999/xhtml"
+	xmlns:html="http://www.w3.org/1999/xhtml"
+	xml:lang="en"
+	id="root"
+	style="height:100%">
+	<head>
+		<title>react.js example</title>
+		
+		<meta name="author" content="Christopher Aue" />
+		<meta name="year" content="2011" />
+		<meta name="contact" content="christopher@reactjs.com" />
+		
+		<meta http-equiv="Content-Type" content="application/xhtml+xml; charset=UTF-8" />
+		<!--<meta http-equiv="X-UA-Compatible" content="IE=EmulateIE7" />-->
+		
+		<script	type="text/javascript" id="jQuery" src="lib/jquery-1.4.2.min.js"></script>
+		<script	type="text/javascript" id="react.js" src="../src/react.js"></script>
+		
+		<script type="text/javascript">
+			$( document ).ready( function() {
+				var div = $( "<div>" ).css( {
+						position : "absolute",
+						left : 20,
+						top : 20,
+						bottom : 20,
+						right : 20,
+						border : "1px solid green",
+						"background-color" : "yellow"
+					} ).appendTo( "body" ),
+					
+					p = $( "<p>" ).appendTo( div ),
+					spanX = $( "<span>" ).attr( "id", "spanX" ).text( "0" ).appendTo( p ),
+					spanM = $( "<span>" ).text( " | " ).appendTo( p ),
+					spanY = $( "<span>" ).attr( "id", "spanY" ).text( "0" ).appendTo( p ),
+					
+					mouseDiv = $( "<div>" ).css( {
+						position : "absolute",
+						left : 0,
+						top : 0,
+						width : 10,
+						height : 10,
+						"background-color" : "orange",
+						"pointer-events" : "none"
+					} ).appendTo( div );
+				
+				react( "mouseX = 0; mouseY = 0" );
+				$( div ).mousemove( function( evt ) {
+					/*
+					mouseDiv.css( "left", evt.layerX-10 );
+					mouseDiv.css( "top", evt.layerY-10 );
+					spanX.text( evt.layerX );
+					spanY.text( evt.layerY );
+					*/
+					react( "mouseX = ", evt.layerX, "; mouseY = ", evt.layerY );
+				} );
+				
+				react( mouseDiv, ".css:( 'left', mouseX-10 )" );
+				react( mouseDiv, ".css:( 'top', mouseY-10 )" );
+				react( spanX, ".text:( mouseX )" );
+				react( spanY, ".text:( mouseY )" );
+			} );
+		</script>
+	</head>
+	
+	<body id="body"></body>
+</html>
