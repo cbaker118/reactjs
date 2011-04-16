@@ -67,36 +67,10 @@ var u = react.leak( "u = undefined" ),
 	foo  = react.leak( "foo = 'foo'" ),
 	bar  = react.leak( "bar = 'bar'" );
 
-//simple custom object
-var sObj = function( value ) {
-		if ( this instanceof sObj ) {
-			this.value = value;
-			return;
-		}
-		
-		return new sObj( value );
-	};
-	
-sObj.prototype = {
-	value : 0,
-	valueOf : function() {
-		return +this.value;
-	},
-	"prefix+" : function() {
-		return +this.value;
-	},
-	"infix+" : function( obj2 ) {
-		return this.value + ( ( obj2 && obj2.value ) || obj2 );
-	},
-	"infix*" : function( obj2 ) {
-		return this.value * ( ( obj2 && obj2.value ) || obj2 );
-	}
-};
-
 //custom datatype
 var defDatatype = react.Datatype(
 		function( data1, data2, data3 ) {
-		/*constructor*/
+			/*constructor*/
 			this.data1 = data1;
 			this.data2 = data2;
 			this.data3 = data3;
@@ -110,7 +84,7 @@ var defDatatype = react.Datatype(
 	),
 	datatype = react.Datatype(
 		function( data1, data2, data3 ) {
-		/*constructor*/
+			/*constructor*/
 			this.data1 = data1;
 			this.data2 = data2;
 			this.data3 = data3;
@@ -2466,6 +2440,114 @@ test( "call w/ return value: return value stored in a variable", function() {
 } );
 
 
+module( "Objecthandling" );
+
+test( "operator overloading", function() {
+	var noPrefNoValOfObj = {
+			value : 5
+		},
+		noPrefValOfObj = {
+			value : 100,
+			valueOf : function() {
+				return this.value;
+			}
+		},
+		prefNoValOfObj = {
+			value : 200,
+			"prefix+" : function() {
+				return this.value;
+			}
+		},
+		prefValOfObj = {
+			value : 200,
+			"prefix+" : function() {
+				return this.value * 10;
+			},
+			valueOf : function() {
+				return this.value;
+			}
+		},
+		opObj = {
+			value : 6,
+			"prefix+" : function() {
+				return +this.value;
+			},
+			"infix+" : function( obj2 ) {
+				return this.value + ( ( obj2 && obj2.value ) || obj2 );
+			},
+			"infix*" : function( obj2 ) {
+				return this.value * ( ( obj2 && obj2.value ) || obj2 );
+			},
+			"infix=" : function( val ) {
+				return this.value = val;
+			}
+		};
+		
+	ok( noPrefNoValOfObj, "noValOfObj = { " +
+			"value : \"5\"" +
+		" };" );
+	
+	ok( noPrefValOfObj, "valOfObj = { " +
+			"value : 100, " +
+			"valueOf : function() {" +
+				" return this.value; " +
+			"}" +
+		" };" );
+	
+	ok( prefNoValOfObj, "valOfObj = { " +
+			"value : 200, " +
+			"\"prefix+\" : function() {" +
+				" return this.value; " +
+			"}" +
+		" };" );
+	
+	ok( prefValOfObj, "valOfObj = { " +
+			"value : 200, " +
+			"\"prefix+\" : function() {" +
+				" return this.value * 10; " +
+			"}, " +
+			"valueOf : function() {" +
+				" return this.value; " +
+			"}" +
+		" };" );
+	
+	ok( opObj, "opObj = { " +
+			"value : 6, " +
+			"\"prefix+\" : function() {" +
+				" return +this.value; " +
+			"}, " +
+			"\"infix+\" : function( obj2 ) {" + 
+				" return this.value + (\"value\" in obj2 ? obj2.value : obj2); " +
+			"}, " + 
+			"\"infix*\" : function( obj2 ) {" +
+				" return this.value * ( ( obj2 && obj2.value ) || obj2 ); " +
+			"}, " +
+			"\"infix=\" : function( val ) {" + 
+				" return this.value = val; " +
+			"}" +
+		" };" );
+	
+	//evaluation
+	ok( isNaN( react( "+", noPrefNoValOfObj ) ), ".valueOf() and \"prefix+\" not defined: isNaN( react( \"+\", noPrefNoValOfObj ) )" );
+	strictEqual( react( "+", noPrefValOfObj ), 100, ".valueOf() defined, \"prefix+\" not defined: react( \"+\", noPrefvalOfObj )" );
+	strictEqual( react( "+", prefNoValOfObj ), 200, ".valueOf() not defined, \"prefix+\" defined: react( \"+\", prefNoValOfObj )" );
+	strictEqual( react( "+", prefValOfObj ), 2000,  ".valueOf() and \"prefix+\" (prefered) defined: react( \"+\", prefValOfObj )" );
+	
+	//operator overloading
+	strictEqual( react( opObj, "+", noPrefNoValOfObj ), 11, "overloaded, stand-alone infix operator, known to left: react( opObj, \"+\", noPrefNoValOfObj )" );
+	strictEqual( react( noPrefNoValOfObj, "+", opObj ), 11, "overloaded, stand-alone infix operator, known to right: react( noPrefNoValOfObj, \"+\", opObj )" );
+	ok( isNaN( react( opObj, "^", opObj ) ), "overloaded, stand-alone infix operator, not known to both objects: isNaN( react( opObj, \"^\", opObj ) )" );
+	strictEqual( react( "+", opObj ), 6, "overloaded, stand-alone prefix operator: react( \"+\", opObj )" );
+	
+	strictEqual( react( opObj, "-5" ), 1,  "not overloaded, composed infix operator w\\ needed operator: react( opObj, \"-5\" )" );
+	strictEqual( react( "-", opObj ), -6,  "not overloaded, composed prefix operator w\\ needed operator: react( \"-\", obj1 )" );
+	
+	//overloaded composed operators needs no testing
+	
+	//operator assignment
+	strictEqual( react( opObj, "+=", 100 ), 106, "operator-assignment: react( opObj, \"+=\", 100 )" );
+} );
+
 module( "Context sensitive variables" );
 
 test( "simple function variable", function() {
@@ -2503,23 +2585,6 @@ test( "variable with value compound of literal and function variable", function(
 
 
 module( "Where to put operator overloading?" );
-
-test( "operator overloading for objects", function() {
-	var obj1 = sObj( "10" ),
-		obj2 = sObj( 5 );
-	
-	ok( obj1, "obj1 = sObj( \"10\" )" );
-	ok( obj2, "obj2 = sObj( 5 )" );
-	
-	strictEqual( react( +obj1, "+", obj2 ), 15, "overloaded, stand-alone infix operator: react( obj1, \"+\", obj2 )" );
-	strictEqual( react( +obj1, "*", obj2 ), 50, "overloaded, stand-alone infix operator: react( obj1, \"*\", obj2 )" );
-	strictEqual( react( "+", obj1 ), 10, "overloaded, stand-alone prefix operator: react( \"+\", obj1 )" );
-	
-	strictEqual( react( +obj1, "-", obj2 ), 5,  "not overloaded, composed infix operator w\\ needed operator: react( obj1, \"-\", obj2 )" );
-	strictEqual( react( "-", obj1 ), -10,  "not overloaded, composed prefix operator w\\ needed operator: react( \"-\", obj1 )" );
-	
-	//overloaded, composed needs no testing
-} );
 
 /*
 module( "react.eval" );
