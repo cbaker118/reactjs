@@ -66,17 +66,17 @@ var u = react.leak( "u = undefined" ),
 	one  = react.leak( "one = 1" ),
 	foo  = react.leak( "foo = 'foo'" ),
 	bar  = react.leak( "bar = 'bar'" );
-
+/*
 //custom datatype
 var defDatatype = react.Datatype(
 		function( data1, data2, data3 ) {
-			/*constructor*/
+			//constructor
 			this.data1 = data1;
 			this.data2 = data2;
 			this.data3 = data3;
 		},
 		{
-			/*prototype*/
+			//prototype
 			data1 : null,
 			data2 : null,
 			data3 : null
@@ -84,13 +84,13 @@ var defDatatype = react.Datatype(
 	),
 	datatype = react.Datatype(
 		function( data1, data2, data3 ) {
-			/*constructor*/
+			//constructor
 			this.data1 = data1;
 			this.data2 = data2;
 			this.data3 = data3;
 		},
 		{
-			/*prototype*/
+			//prototype
 			data1 : null,
 			data2 : null,
 			data3 : null,
@@ -107,13 +107,13 @@ var defDatatype = react.Datatype(
 	),
 	ctxtDatatype = react.Datatype(
 		function( data1, data2, data3 ) {
-		/*constructor*/
+			//constructor
 			this.data1 = data1;
 			this.data2 = data2;
 			this.data3 = data3;
 		},
 		{
-			/*prototype*/
+			//prototype
 			data1 : null,
 			data2 : null,
 			data3 : null,
@@ -129,7 +129,7 @@ var defDatatype = react.Datatype(
 			}
 		}
 	);
-
+*/
 
 module( "General" );
 
