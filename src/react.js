@@ -91,119 +91,16 @@
 			func : null
 		};
 	
-	var Datatype = ( function() {
-			var valueOf = function( ctxt, data ) {
-					try {
-						if ( this._isCtxtEval )
-							return this._valueOf( ctxt, data );
-						
-						if ( this._evaled === null )
-							this._evaled = this._valueOf();
-						
-						return this._evaled;
-					
-					} catch( e ) {
-						error( "react.datatype.valueOf: " + e.message );
-					}
-				},
-				toString = function( ctxt, data ) {
-					try {
-						if ( this._isCtxtEval )
-							return this._toString ? this._toString( ctxt, data ) : String( this.valueOf( ctxt, data ) );
-						
-						if ( this._string === null )
-							this._string = this._toString  ? this._toString() : String( this.valueOf() );
-						
-						return this._string;
-					
-					} catch( e ) {
-						error( "react.datatype.toString: " + e.message );
-					}
-				},
-				_valueOf = function() {
-					return undefined;
-				},
-				_toString = function( ctxt, data ) {
-					return String( this.valueOf( ctxt, data ) );
-				};
-			
-			return function( ini, proto ) {
-				var key, type, constr, dataProps = [], fixnew;
-				
-				//identify data properties reflecting the instances state
-				for ( key in proto ) {
-					type = typeof proto[ key ];
-					if ( proto[ key ] === null || ( type !== "object" && type !== "function" ) )
-						dataProps.push( key );
-				}
-				
-				constr = function() {
-					if ( fixnew && this instanceof constr )
-						return this;
-					
-					var ret = this;
-					
-					//instantiation without "new" operator
-					if ( !(this instanceof constr) ) {
-						fixnew = true;
-						ret = new constr;
-						fixnew = false;
-					}
-					
-					ini.apply( ret, arguments );
-					
-					//check, if instance needs to be reactive
-					for ( var idx = 0, len = dataProps.length; idx < len; idx++ ) {
-						var data = ret[ dataProps[ idx ] ];
-						
-						if ( data !== undefined && data._isReactive ) {
-							if ( !ret._isReactive )
-								reactive( ret );
-							
-							ret.addDep( data._key ? data : data._dep );
-						}				
-					}
-					
-					if ( ret._valueOf.length )
-						ret._isCtxtEval = true;
-					else
-						delete ret._isCtxtEval;
-					
-					return ret;
-				};
-				
-				constr.prototype = Object.create( proto );
-				
-				constr.prototype._valueOf   = proto.hasOwnProperty( "valueOf" )   ? proto.valueOf   : _valueOf;
-				constr.prototype._toString  = proto.hasOwnProperty( "toString" )  ? proto.toString  : _toString;
-				
-				proto = constr.prototype;
-				
-				proto.valueOf    = valueOf;
-				proto.toString   = toString;
-				
-				proto._evaled = null;
-				proto._string = null;
-				
-				return constr;
-			};
-		}() );
-	
 	var Reactive = function( val, noPartOf ) {
-			var r;
-			if ( this instanceof Reactive )
-				r = this;
-			else
-				r = Object.create( Reactive.prototype );
+			if ( !(this instanceof Reactive ) )
+				return new Reactive( val, noPartOf );
 			
-			r._guid	  = Reactive.prototype._guid++;
-			r._dep 	  = null;
-			r._partOf = {};
-			r._funcs  = [];
+			this._guid	  = Reactive.prototype._guid++;
+			this._dep 	  = null;
+			this._partOf = {};
+			this._funcs  = [];
 			
-			r.set( val, noPartOf );
-			
-			return r;
+			this.set( val, noPartOf );
 		};
 	
 	Reactive.prototype = {
@@ -522,6 +419,43 @@
 		_funcs  : null
 	};
 	
+	var Datatype = function( constructor ) {
+			//identify data properties reflecting the instances state
+			var type, key, dataProps = [];
+			for ( key in constructor.prototype ) {
+				type = typeof constructor.prototype[ key ];
+				if ( ( type !== "object" && type !== "function" ) || constructor.prototype[ key ] === null )
+					dataProps.push( key );
+			}
+			
+			//function that creates instances
+			return function() {
+				var ret, inst;
+				
+				ret = inst = Object.create( constructor.prototype );
+				constructor.apply( inst, arguments );
+				
+				inst._dep = { depObj : true };
+				
+				//check, if instance needs to be reactive
+				for ( var idx = 0, len = dataProps.length; idx < len; idx++ ) {
+					var data = inst[ dataProps[ idx ] ];
+					
+					if ( !data || !data._isReactive )
+						continue;
+					
+					inst._dep[ data._guid ] = data;
+					
+					if ( !inst._isReactive )
+						ret = Reactive( inst );
+				}
+				
+				delete inst._dep;
+				
+				return ret;
+			}
+		};
+	
 	var Interpreter = ( function() {
 			//streamlined pratt interpreter - derived from http://javascript.crockford.com/tdop/tdop.html
 			//expression evaluation directly included into the interpret process
@@ -543,6 +477,8 @@
 										cur = this[ 1 ].valueOf( ctxt, data );
 									//else if ( typeof this[ 1 ] === "function" )
 									//	cur = this[ 1 ]( ctxt, data );
+									else if ( this[ 1 ]._isValArray )
+										cur = this[ 1 ].valueOf();
 									else
 										cur = this[ 1 ];
 									
@@ -555,6 +491,8 @@
 										cur = this[ idx ].valueOf( ctxt, data );
 									//else if ( typeof this[ idx ] === "function" )
 									//	cur = this[ idx ]( ctxt, data );
+									else if ( this[ idx ]._isValArray )
+										cur = this[ idx ].valueOf();
 									else
 										cur = this[ idx ];
 									
@@ -1065,7 +1003,7 @@
 			operator( "]" );
 			
 			operator( "clean", "prefix", 0, null, function( undef, interpreter ) {
-				return interpreter.varTable.clean();
+				return interpreter.nameTable.clean();
 			} );
 			
 			operator( "cleanExcept", "prefix", 4, null, function( vars, interpreter ) {
@@ -1089,7 +1027,7 @@
 					varObj[ vars._key ] = vars;
 				}
 				
-				return interpreter.varTable.clean( varObj );
+				return interpreter.nameTable.clean( varObj );
 			} );
 			
 			operator( ",", "infix", 5, null, ( function() {
@@ -1455,7 +1393,7 @@
 				if ( ( v._isVar && v === val ) || ( v.id === "(id)" && val && v.value === val._key ) )
 					return val;
 				
-				return interpreter.varTable.set( v._key || v.value, val );
+				return interpreter.nameTable.set( v._key || v.value, val );
 			} );
 			
 			operator( "(op=)", "infixr", 10, function( expr ) {
@@ -2658,7 +2596,7 @@
 				if ( v._isValArray )
 					return v[ "delete" ]();
 				
-				return interpreter.varTable[ "delete" ]( v._key || v.value );
+				return interpreter.nameTable[ "delete" ]( v._key || v.value );
 			} );
 			
 			operator( "~delete", "delete", 90, null, function( path ) {
@@ -2670,7 +2608,7 @@
 				return revProps.set( ctxtProp.ctxt, ctxtProp.prop, reactPaths.set( path, undefined, true, true ) );
 			} );
 			
-			operator( "~", "prefix", 90, null, 	function( path ) {
+			operator( "~", "prefix", 90, null, function( path ) {
 				if ( !path || !path._propAccess )
 					error( "Bad lvalue: no reactive object property." );
 				
@@ -2697,6 +2635,16 @@
 				arr : function( arr ) {
 					return arr.valueOf( interpret.ctxt, interpret.data );
 				}
+			} );
+			
+			operator( "datatype", "prefix", 90, null, function( f ) {
+				if ( typeof f !== "function" )
+					error( "'datatype' has to be followed by a function!" );
+				
+				if ( this.prevToken !== "=" )
+					error( "'datatype' has to be preceded by an assignment!" );
+				
+				return Datatype( f );
 			} );
 			
 			operator( "contextVariable", "prefix", 90, null, function( f ) {
@@ -2751,7 +2699,7 @@
 					funcLit = func;
 				
 				} else if ( func._isValArray ) {
-					if ( !noPartOf )
+					if ( !noPartOf && !this.prevToken && !this.nextToken )
 						for ( var key in func._dep ) {
 							if ( key === "depObj" )
 								continue;
@@ -2775,8 +2723,9 @@
 				
 				} else if ( func._isVar ) {
 					if ( !func._locked ) {
-						if ( !noPartOf )
+						if ( !noPartOf && !this.prevToken && !this.nextToken )
 							func._bind( func, argsArr, true );
+						
 						rea = makeValArray( [ "(", func ], func );
 					}
 					funcLit = func._value;
@@ -2795,7 +2744,7 @@
 							if ( key === "depObj" )
 								continue;
 							
-							if ( !noPartOf )
+							if ( !noPartOf && !this.prevToken && !this.nextToken )
 								argsArr[ i ]._dep[ key ]._bind( func, argsArr, true );
 							
 							varInArgs = true;
@@ -2805,7 +2754,7 @@
 					
 					} else if ( argsArr[ i ]._isVar ) {
 						if ( !argsArr[ i ]._locked ) {
-							if ( !noPartOf )
+							if ( !noPartOf && !this.prevToken && !this.nextToken )
 								argsArr[ i ]._bind( func, argsArr, true );
 							
 							varInArgs = true;
@@ -2823,10 +2772,12 @@
 				else if ( varInArgs )
 					rea = arrFunc( funcLit, args );
 				
-				try {
-					tmp = funcLit.apply( ctxtLit, argLits );
-				} catch ( e ) {
-					error( "A reactive function call causes problems: " + e.message );
+				if ( !rea || ( !this.prevToken && !this.nextToken ) ) {
+					try {
+						tmp = funcLit.apply( ctxtLit, argLits );
+					} catch ( e ) {
+						error( "A reactive function call causes problems: " + e.message );
+					}
 				}
 				
 				return rea || tmp;
@@ -3126,23 +3077,23 @@
 				endExpr = function( expr, token ) {
 					var parent = expr.parent;
 					
-					expr.nextToken = token.id;
+					expr.nextToken = !token || !token.lbp ? undefined : token.id;
 					
 					//get variable objects
 					//Since variables cannot be deleted, while they are still referenced,
 					//the pointer to the object stays the same as long as needed.
 					if ( !expr.o.dotPropAccess && expr.o.second && expr.o.second.id === "(id)" ) {
-						if ( !( expr.o.second.value in this.varTable.table ) )
+						if ( !( expr.o.second.value in this.nameTable.table ) )
 							error( expr.o.second.value + " is not defined." );
 						
-						expr.o.second = this.varTable.table[ expr.o.second.value ];
+						expr.o.second = this.nameTable.table[ expr.o.second.value ];
 					}
 					
 					if ( !expr.o.assignment && ( expr.o.call || expr.o.id !== "(" ) && expr.o.first && expr.o.first.id === "(id)" ) {
-						if ( !( expr.o.first.value in this.varTable.table ) )
+						if ( !( expr.o.first.value in this.nameTable.table ) )
 							error( expr.o.first.value + " is not defined." );
 						
-						expr.o.first = this.varTable.table[ expr.o.first.value ];
+						expr.o.first = this.nameTable.table[ expr.o.first.value ];
 					}
 					
 					//use the value of a variable in case of assigning to the same variable
@@ -3560,6 +3511,8 @@
 									//extend expression
 									if ( expr.rbp < token.lbp )
 										expr = token.led( expr );
+									
+									token = undefined;
 								}
 							}
 						}
@@ -3570,24 +3523,17 @@
 						expr = endExpr.call( this, expr, token );
 					
 					//finetune return value
-					if ( interpret.returns ) {
-						if ( ret.value ) {
-							if ( ret.value.id === "(id)" ) {
-								if ( !( ret.value.value in this.varTable.table ) )
-									error( ret.value.value + " is not defined." );
-								
-								ret.value = this.varTable.table[ ret.value.value ];
-							}
+					if ( ret.value ) {
+						if ( ret.value.id === "(id)" ) {
+							if ( !( ret.value.value in this.nameTable.table ) )
+								error( ret.value.value + " is not defined." );
 							
-							if ( !interpret.retVars && ( ret.value._isValArray || ret.value._isVar ) )
-								return ret.value.valueOf( interpret.ctxt, interpret.data );
+							ret.value = this.nameTable.table[ ret.value.value ];
 						}
-					
-						//return top-level expression
-						return ret.value;
 					}
 					
-					return undefined;
+					//return top-level expression
+					return ret.value;
 				};
 			
 			//initializing interpreter
@@ -3648,19 +3594,19 @@
 				Variable.prototype[ key ] = prop;
 			} );
 			
-			var VarTable = function( base ) {
+			var NameTable = function( base ) {
 					var t;
-					if ( this instanceof VarTable )
+					if ( this instanceof NameTable )
 						t = this;
 					else
-						t = Object.create( VarTable.prototype );
+						t = Object.create( NameTable.prototype );
 					
 					t.table = base;
 					
 					return t;
 				};
 			
-			VarTable.prototype = {
+			NameTable.prototype = {
 				table  : null,
 				clean : function( vars ) {
 					var ret = true,
@@ -3771,7 +3717,7 @@
 						}
 					}
 					
-					return VarTable( Object.create( table ) );
+					return NameTable( Object.create( table ) );
 				},
 				setupOps = function( ops, base ) {
 					if ( !ops || !ops.length )
@@ -3827,10 +3773,10 @@
 				var react = function() {
 						var ret;
 						
-						interpret.returns = true;
-						interpret.retVars = false;
-						
 						ret = interpret.apply( react, arguments );
+						
+						if ( ret && ( ret._isValArray || ret._isVar ) )
+							ret = ret.valueOf( interpret.ctxt, interpret.data );
 						
 						interpret.ctxt = window;
 						interpret.data = null;
@@ -3855,14 +3801,11 @@
 								noPartOf = true;
 								arguments = Array.prototype.slice.call( arguments, 1 );
 							}
-								
-							interpret.returns = true;
-							interpret.retVars = true;
 							
 							ret = interpret.apply( react, arguments );
 							
 							if ( ret._isValArray )
-								ret = this.varTable.set( null, ret );
+								ret = this.nameTable.set( null, ret );
 							
 							interpret.ctxt = window;
 							interpret.data = null;
@@ -3883,7 +3826,7 @@
 				
 				react.litTable = setupLits( litTable, template && template.litTable );
 				react.opTable  = setupOps( opTable, template && template.opTable );
-				react.varTable = setupVars( consts, template && template.varTable, react );
+				react.nameTable = setupVars( consts, template && template.nameTable, react );
 				
 				react.Datatype      = Datatype;
 				//react.Reactive      = Reactive;
