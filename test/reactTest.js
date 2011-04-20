@@ -2174,10 +2174,9 @@ test( "call w/o return value: function is variable, argument is literal", functi
 	
 	strictEqual( func._funcs.length, 0, "func._funcs.length" );
 	call = react.leak( "func( 100 )" );
-	strictEqual( func._funcs.length, 1, "func._funcs.length" );
-	
 	ok( equivArr( call._value, [ "(", func, 100 ] ), "react( func, \"( 100 )\" )" )
 	ok( objContent( call._dep, [ func ] ), "react.leak( func, \"( 100 )\" )._dep" );
+	strictEqual( func._funcs.length, 1, "func._funcs.length" );
 	
 	strictEqual( foo, 100, "foo" );
 	
@@ -2426,24 +2425,46 @@ test( "registering :() and deregistering ~() call", function() {
 	react( "delete r1" );
 } );
 
+test( "call w/ return value: return value used, but not in an assignment", function() {
+	var sqrFunc = function( x ) { return x.valueOf()*x.valueOf() },
+		sqr = react.leak( "sqr = ", sqrFunc );
+	
+	ok( sqrFunc, "sqrFunc = function( x ) { return x.valueOf()*x.valueOf() }" );
+	ok( sqr, "react( \"sqr = \", sqrFunc );" );
+	
+	strictEqual( react( "sqr( x ) + sqr( 10 );" ), 100 + x.valueOf()*x.valueOf(), "react( \"sqr( x ) + sqr( 10 );\" )" );
+	strictEqual( sqr._funcs.length, 0, "sqr._funcs.length" );
+	
+	strictEqual( react( "sqr( x ); sqr( 10 )" ), 100, "react( \"sqr( x ); sqr( 10 )\" )" );
+	strictEqual( sqr._funcs.length, 2, "sqr._funcs.length" );
+	
+	react( "sqr~( x ); sqr~( 10 )" );
+	react( "delete sqr" );
+} );
+
 test( "call w/ return value: return value stored in a variable", function() {
 	var sqrFunc = function( x ) { return x.valueOf()*x.valueOf() },
-		rea = react.leak( "rea = 0" ),
-		sqr = react.leak( "sqr = ", sqrFunc );
+		sqr = react.leak( "sqr = ", sqrFunc ),
+		rea = react.leak( "rea = 0" );
 	
 	ok( sqrFunc, "sqrFunc = function( x ) { return x.valueOf()*x.valueOf() }" );
 	ok( sqr, "react( \"sqr = \", sqrFunc );" );
 	
 	ok( equivArr( react.leak( "rea = ", sqrFunc, "( x )" )._value, [ "(", sqrFunc, x ] ), "react( \"rea = \", sqrFunc, \"( x )\" )" );
 	ok( objContent( rea._dep, [ x ] ), "react.leak( \"rea = \", sqrFunc, \"( x )\" )._dep" );
+	strictEqual( react( "rea" ), x.valueOf()*x.valueOf(), "react( \"rea\" )" );
 	
 	ok( equivArr( react.leak( "rea = sqr(", 10, ")" )._value, [ "(", sqr, 10 ] ), "react( \"rea = sqr(\", 10, \")\" )" );
 	ok( objContent( rea._dep, [ sqr ] ), "react.leak( \"rea = sqr(\", 10, \")\" )._dep" );
+	strictEqual( react( "rea" ), 100, "react( \"rea\" )" );
 	
 	ok( equivArr( react.leak( "rea = sqr( x )" )._value, [ "(", sqr, x ] ), "react( \"rea = sqr( x )\" )" );
 	ok( objContent( rea._dep, [ sqr, x ] ), "react.leak( \"rea = sqr( x )\" )._dep" );
-	debugger;
-	react( sqrFunc, "~( x ); sqr~( 10 ); sqr~( x );" );
+	strictEqual( react( "rea" ), x.valueOf()*x.valueOf(), "react( \"rea\" )" );
+	
+	ok( equivArr( react.leak( "rea += sqr(", 10, ")" )._value, [ "+", [ "(", sqr, x ], [ "(", sqr, 10 ] ] ), "react( \"rea += sqr(\", 10, \")\" )" );
+	ok( objContent( rea._dep, [ sqr, x ] ), "react.leak( \"rea = sqr(\", 10, \")\" )._dep" );
+	strictEqual( react( "rea" ), 100 + x.valueOf()*x.valueOf(), "react( \"rea\" )" );
 	
 	react( "delete rea; delete sqr;" );
 } );
@@ -2575,8 +2596,6 @@ test( "custom datatype", function() {
 	ok( react( "x += 1" ), "react( \"x += 1\" )" );
 	strictEqual( react( "inst" ).value, x.valueOf()+2, "automatic update of reactive instance: react( \"inst\" ).value" );
 	strictEqual( react( "inst2" ).value, react( "inst" ), "automatic update of depending reactive instance: react( \"inst2\" ).value" );
-	
-	//react( "Type~( x+2 ); Type~( inst );" );
 	
 	react( "delete inst2; delete inst;" );
 } );

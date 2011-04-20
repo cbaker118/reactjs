@@ -2699,7 +2699,7 @@
 					funcLit = func;
 				
 				} else if ( func._isValArray ) {
-					if ( !noPartOf )
+					if ( !noPartOf && !this.prevToken && !this.nextToken )
 						for ( var key in func._dep ) {
 							if ( key === "depObj" )
 								continue;
@@ -2723,8 +2723,9 @@
 				
 				} else if ( func._isVar ) {
 					if ( !func._locked ) {
-						if ( !noPartOf )
+						if ( !noPartOf && !this.prevToken && !this.nextToken )
 							func._bind( func, argsArr, true );
+						
 						rea = makeValArray( [ "(", func ], func );
 					}
 					funcLit = func._value;
@@ -2743,7 +2744,7 @@
 							if ( key === "depObj" )
 								continue;
 							
-							if ( !noPartOf )
+							if ( !noPartOf && !this.prevToken && !this.nextToken )
 								argsArr[ i ]._dep[ key ]._bind( func, argsArr, true );
 							
 							varInArgs = true;
@@ -2753,7 +2754,7 @@
 					
 					} else if ( argsArr[ i ]._isVar ) {
 						if ( !argsArr[ i ]._locked ) {
-							if ( !noPartOf )
+							if ( !noPartOf && !this.prevToken && !this.nextToken )
 								argsArr[ i ]._bind( func, argsArr, true );
 							
 							varInArgs = true;
@@ -2771,10 +2772,12 @@
 				else if ( varInArgs )
 					rea = arrFunc( funcLit, args );
 				
-				try {
-					tmp = funcLit.apply( ctxtLit, argLits );
-				} catch ( e ) {
-					error( "A reactive function call causes problems: " + e.message );
+				if ( !rea || ( !this.prevToken && !this.nextToken ) ) {
+					try {
+						tmp = funcLit.apply( ctxtLit, argLits );
+					} catch ( e ) {
+						error( "A reactive function call causes problems: " + e.message );
+					}
 				}
 				
 				return rea || tmp;
@@ -3074,7 +3077,7 @@
 				endExpr = function( expr, token ) {
 					var parent = expr.parent;
 					
-					expr.nextToken = token.id;
+					expr.nextToken = !token || !token.lbp ? undefined : token.id;
 					
 					//get variable objects
 					//Since variables cannot be deleted, while they are still referenced,
@@ -3508,6 +3511,8 @@
 									//extend expression
 									if ( expr.rbp < token.lbp )
 										expr = token.led( expr );
+									
+									token = undefined;
 								}
 							}
 						}
@@ -3518,24 +3523,17 @@
 						expr = endExpr.call( this, expr, token );
 					
 					//finetune return value
-					if ( interpret.returns ) {
-						if ( ret.value ) {
-							if ( ret.value.id === "(id)" ) {
-								if ( !( ret.value.value in this.nameTable.table ) )
-									error( ret.value.value + " is not defined." );
-								
-								ret.value = this.nameTable.table[ ret.value.value ];
-							}
+					if ( ret.value ) {
+						if ( ret.value.id === "(id)" ) {
+							if ( !( ret.value.value in this.nameTable.table ) )
+								error( ret.value.value + " is not defined." );
 							
-							if ( !interpret.retVars && ( ret.value._isValArray || ret.value._isVar ) )
-								return ret.value.valueOf( interpret.ctxt, interpret.data );
+							ret.value = this.nameTable.table[ ret.value.value ];
 						}
-					
-						//return top-level expression
-						return ret.value;
 					}
 					
-					return undefined;
+					//return top-level expression
+					return ret.value;
 				};
 			
 			//initializing interpreter
@@ -3775,10 +3773,10 @@
 				var react = function() {
 						var ret;
 						
-						interpret.returns = true;
-						interpret.retVars = false;
-						
 						ret = interpret.apply( react, arguments );
+						
+						if ( ret && ( ret._isValArray || ret._isVar ) )
+							ret = ret.valueOf( interpret.ctxt, interpret.data );
 						
 						interpret.ctxt = window;
 						interpret.data = null;
@@ -3803,9 +3801,6 @@
 								noPartOf = true;
 								arguments = Array.prototype.slice.call( arguments, 1 );
 							}
-								
-							interpret.returns = true;
-							interpret.retVars = true;
 							
 							ret = interpret.apply( react, arguments );
 							
