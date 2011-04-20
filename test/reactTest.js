@@ -1413,6 +1413,8 @@ test( "assignment", function() {
 			return e.message;
 		}
 	}() ), "react.js | a is not defined.", "react( \"z = a+10\" ) -> exception" );
+	
+	react( "delete z; delete z2; delete", anonym );
 } );
 
 test( "delete", function() {
@@ -1489,6 +1491,8 @@ test( "calculate with extern variables", function() {
 	
 	ok( equivArr( anonym2._value, [ "*", 5, anonym ] ), "calc with anonymous variable: react( anonym, \"*5\" )" );
 	ok( objContent( anonym2._dep, [ anonym ] ), "react.leak( anonym, \"*5\" )._dep" );
+	
+	react( "delete", anonym, "; delete", anonym2 );
 } );
 
 test( "operator assignments", function() {
@@ -1519,6 +1523,8 @@ test( "operator assignments", function() {
 	react.leak( "no partOf", "z ==.= 'bar'" );
 	ok( equivArr( z._value, [ "==", zVal, "bar" ] ), "operator assignment separator: react( \"z ==.= 'bar'\" )" );
 	ok( objContent( z._dep, [ x ] ), "react.leak( \"z ==.= 'bar'\" )._dep" );
+	
+	react( "delete z; delete", anonym );
 } );
 
 test( "evaluation before and after modifying a part", function() {
@@ -1567,6 +1573,8 @@ test( "assigning object to variable", function() {
 	ok( rea, "rea = react.leak( \"rea = \", { foo : 'bar'} )" );
 	strictEqual( rea._value, obj, "rea._value after assignment" );
 	strictEqual( rea.valueOf(), obj, "rea.valueOf() after assignment" );
+	
+	react( "delete rea" );
 } );
 
 test( "property access: object is literal, property is variable", function() {
@@ -1588,6 +1596,9 @@ test( "property access: object is literal, property is variable", function() {
 	
 	ok( equivArr( react.leak( "no partOf", sObj, "[ ", sObj, "[ foo ].bar ]" )._value, [ ".", sObj, [ ".", sObj, foo, "bar" ] ] ), "1st propname also uses property access: react( sObj, \"[ \", sObj, \"[ foo ].bar ]\" )" );
 	ok( objContent( react.leak( "no partOf", sObj, "[ ", sObj, "[ foo ].bar ]" )._dep, [ foo ] ), "react( sObj, \"[ \", sObj, \"[ foo ].bar ]\" )" );
+	
+	react( "cleanExcept u, n, t, f, x, y, foo, bar, zero, one" );
+	
 } );
 
 test( "property access: object is variable, property is literal", function() {	
@@ -1613,7 +1624,7 @@ test( "property access: object is variable, property is literal", function() {
 	ok( equivArr( react.leak( "no partOf", "obj[ obj[ foo ].bar ]" )._value, [ ".", obj, [ ".", obj, foo, "bar" ] ] ), "1st propname also uses property access: react( \"obj[ obj[ foo ].bar ]\" )" );
 	ok( objContent( react.leak( "no partOf", "obj[ obj[ foo ].bar ]" )._dep, [ obj, foo ] ), "react( \"obj[ obj[ foo ].bar ]\" )._dep" );
 	
-	react( "delete obj" );
+	react( "cleanExcept u, n, t, f, x, y, foo, bar, zero, one" );
 } );
 
 test( "permanent property assignment: object literal, property variable", function() {
@@ -2091,6 +2102,8 @@ test( "assigning function to variable", function() {
 	ok( fac, "fac = react.leak( \"fac = \", function( x ) { return x < 2 ? 1 : fac( x-1 )*x; } )" );
 	strictEqual( fac._value, func, "fac._value after assignment" );
 	strictEqual( fac.valueOf(), func, "fac.valueOf() after assignment" );
+	
+	react( "delete fac" );
 } );
 
 test( "call w/o return value: function is variable, argument is literal", function() {
@@ -2533,7 +2546,7 @@ test( "custom datatype", function() {
 	strictEqual( react( "inst" ).value, x.valueOf()+2, "automatic update of reactive instance: react( \"inst\" ).value" );
 	strictEqual( react( "inst2" ).value, react( "inst" ), "automatic update of depending reactive instance: react( \"inst2\" ).value" );
 	
-	react( "delete inst2; delete inst;" );
+	react( "delete inst2; delete inst; delete Type;" );
 } );
 
 module( "Context sensitive variables" );
@@ -2550,6 +2563,8 @@ test( "simple function variable", function() {
 	strictEqual( react.context( {} )( "#ctxtVar" ), "ctxt", "react.context( {} )( \"#ctxtVar\" ) === \"ctxt\"" );
 	strictEqual( react.context( {}, true )( "#ctxtVar" ), "ctxtdata", "react.context( {}, true )( \"#ctxtVar\" ) === \"ctxtdata\"" );
 	strictEqual( react.context( null, true )( "#ctxtVar" ), "data", "react.context( null, true )( \"#ctxtVar\" ) === \"data\"" );
+	
+	react( "delete ctxtVar" );
 } );
 
 test( "variable with value compound of literal and function variable", function() {
@@ -2569,11 +2584,11 @@ test( "variable with value compound of literal and function variable", function(
 	
 	ok( react( "rea -= ctxtVar" ), "react( \"rea -= ctxtVar\" )" );
 	strictEqual( rea._ctxtEval, undefined, "rea is no longer a function variable." );
+	
+	react( "delete rea; delete ctxtVar;" );
 } );
 
 /*
-module( "react.eval" );
-
 test( "evaluation without context", function() {
 	var rct = react.leak( "no partOf", "x+t" ),
 		ctxtVar  = react.leak( "ctxtVar = ", function( ctxt, data ) {
@@ -2634,11 +2649,5 @@ test( "function calls", function() {
 } );
 */
 
-
-module( "react.Reactive" );
-//TODO: add/remove dependencies
-
 module( "Custom parser" );
 //TODO
-
-//react( "clean" );

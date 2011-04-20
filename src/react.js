@@ -420,45 +420,18 @@
 	};
 	
 	var Datatype = function( constructor ) {
-			//identify data properties reflecting the instances state
-			var type, key, dataProps = [];
-			for ( key in constructor.prototype ) {
-				type = typeof constructor.prototype[ key ];
-				if ( ( type !== "object" && type !== "function" ) || constructor.prototype[ key ] === null )
-					dataProps.push( key );
-			}
-			
 			//function that creates instances
 			return function() {
-				var ret, inst;
-				
-				ret = inst = Object.create( constructor.prototype );
-				constructor.apply( inst, arguments );
-				
-				inst._dep = { depObj : true };
-				
-				//check, if instance needs to be reactive
-				for ( var idx = 0, len = dataProps.length; idx < len; idx++ ) {
-					var data = inst[ dataProps[ idx ] ];
-					
-					if ( !data || !data._isReactive )
-						continue;
-					
-					inst._dep[ data._guid ] = data;
-					
-					if ( !inst._isReactive )
-						ret = Reactive( inst );
-				}
-				
-				delete inst._dep;
+				var ret = Object.create( constructor.prototype );
+				constructor.apply( ret, arguments );
 				
 				return ret;
-			}
+			};
 		};
 	
 	var Interpreter = ( function() {
-			//streamlined pratt interpreter - derived from http://javascript.crockford.com/tdop/tdop.html
-			//expression evaluation directly included into the interpret process
+			//streamlined pratt parser - derived from http://javascript.crockford.com/tdop/tdop.html
+			//expression evaluation directly included into the parse process
 			
 			var noPartOf = false;
 			
@@ -658,18 +631,16 @@
 									for ( i = 1, l = this.length; i < l; i++ ) {
 										if ( this[ i ] && this[ i ].constructor === Array ) {
 											for ( id1 in this[ i ]._dep ) {
-												if ( this[ i ]._dep[ id1 ] === _dep[ id2 ] ) {
+												if ( this[ i ]._dep[ id1 ] === _dep[ id2 ] )
 													continue DEPLOOP;
-												}
 												
 												if ( this[ i ]._dep[ id1 ]._isCtxtEval )
 													stayFuncVar = true;
 											}
 										
 										} else {
-											if ( this[ i ] === _dep[ id2 ] ) {
+											if ( this[ i ] === _dep[ id2 ] )
 												continue DEPLOOP;
-											}
 											
 											if ( this[ i ]._isCtxtEval )
 												stayFuncVar = true;
@@ -2680,7 +2651,8 @@
 					varInArgs = false,
 					argsArr,
 					tmp,
-					rea;
+					rea,
+					track = !noPartOf && !this.prevToken && !this.nextToken;
 				
 				//create arguments array to bind
 				if ( args && args._isValArray && args[ 0 ] === "," ) {
@@ -2699,7 +2671,9 @@
 					funcLit = func;
 				
 				} else if ( func._isValArray ) {
-					if ( !noPartOf && !this.prevToken && !this.nextToken )
+					funcLit = func.valueOf();
+					
+					if ( track )
 						for ( var key in func._dep ) {
 							if ( key === "depObj" )
 								continue;
@@ -2709,8 +2683,6 @@
 					
 					if ( func._dep )
 						rea = makeValArray( [ "(", func ], func._dep );
-					
-					funcLit = func.valueOf();
 					
 					if ( func[ 0 ] === "." && func.length > 3 ) {
 						tmp = func[ func.length-1 ].pop();
@@ -2722,13 +2694,14 @@
 					}
 				
 				} else if ( func._isVar ) {
+					funcLit = func._value;
+					
 					if ( !func._locked ) {
-						if ( !noPartOf && !this.prevToken && !this.nextToken )
+						if ( track )
 							func._bind( func, argsArr, true );
 						
 						rea = makeValArray( [ "(", func ], func );
 					}
-					funcLit = func._value;
 				
 				} else {
 					funcLit = func;
@@ -2744,7 +2717,7 @@
 							if ( key === "depObj" )
 								continue;
 							
-							if ( !noPartOf && !this.prevToken && !this.nextToken )
+							if ( track )
 								argsArr[ i ]._dep[ key ]._bind( func, argsArr, true );
 							
 							varInArgs = true;
@@ -2754,7 +2727,7 @@
 					
 					} else if ( argsArr[ i ]._isVar ) {
 						if ( !argsArr[ i ]._locked ) {
-							if ( !noPartOf && !this.prevToken && !this.nextToken )
+							if ( track )
 								argsArr[ i ]._bind( func, argsArr, true );
 							
 							varInArgs = true;
@@ -3113,14 +3086,6 @@
 						}
 					}
 					
-					/*
-					if ( this.doesEval ) {				
-						expr.o.second = expr.o.second && expr.o.second.valueOf( interpret.ctxt, interpret.data );
-						
-						if ( !expr.o.assignment )
-							expr.o.first = expr.o.first && expr.o.first.valueOf( interpret.ctxt, interpret.data );
-					}
-					*/
 					//evaluate expression
 					parent.o[ parent.p ] = ( expr.o.nudEval || expr.o.ledEval ).call( expr, expr.o.first, expr.o.second, this );
 					
@@ -3647,7 +3612,10 @@
 								error( "Cannot delete variable " + key + ". It is still used in: " + this.table[ key ]._partOf[ id ].toString() + "." );
 						
 						if ( this.table[ key ]._funcs.length )
-							error( "Cannot delete variable " + key + ". It is still used in: " + this.table[ key ]._funcs[ 0 ].args + "." );
+							error( "Cannot delete variable " + key + ". It is still used in: " + 
+								( this.table[ key ]._funcs[ 0 ].func._isVar ? this.table[ key ]._funcs[ 0 ].func._key : "function() {}" ) + 
+								"( " + this.table[ key ]._funcs[ 0 ].args + " )."
+							);
 						
 						var ret = this.table[ key ][ "delete" ]();
 						
@@ -3828,8 +3796,6 @@
 				react.opTable  = setupOps( opTable, template && template.opTable );
 				react.nameTable = setupVars( consts, template && template.nameTable, react );
 				
-				react.Datatype      = Datatype;
-				//react.Reactive      = Reactive;
 				react.Interpreter   = Interpreter;
 				
 				interpret.ctxt = window;
