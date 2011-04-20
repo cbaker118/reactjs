@@ -1529,7 +1529,7 @@ test( "clean", function() {
 	ok( react( "~", obj, ".prop" ), "react( \"~\", obj, \".prop\" )" );
 	
 	ok( react( "clean" ), "react( \"clean\" )" );
-	ok( isEmptyObj( react.varTable.table, true ), "all variables deleted" );
+	ok( isEmptyObj( react.nameTable.table, true ), "all variables deleted" );
 	
 	//restore deleted variables
 	u = react.leak( "u = undefined" );
@@ -2166,11 +2166,15 @@ test( "call w/o return value: function is variable, argument is literal", functi
 			foo = arg + 50;
 		},
 		func = react.leak( "func = ", func1 ),
-		call = react.leak( "func( 100 )" );
+		call;
 	
 	ok( func1, "func1 = function( arg ) { foo = arg; }" );
 	ok( func2, "func2 = function( arg ) { foo = arg + 50; }" );
 	ok( func, "react( \"func = \", func1 )" );
+	
+	strictEqual( func._funcs.length, 0, "func._funcs.length" );
+	call = react.leak( "func( 100 )" );
+	strictEqual( func._funcs.length, 1, "func._funcs.length" );
 	
 	ok( equivArr( call._value, [ "(", func, 100 ] ), "react( func, \"( 100 )\" )" )
 	ok( objContent( call._dep, [ func ] ), "react.leak( func, \"( 100 )\" )._dep" );
@@ -2182,10 +2186,13 @@ test( "call w/o return value: function is variable, argument is literal", functi
 	strictEqual( foo, 150, "foo" );
 	
 	ok( react( "func~( 100 )" ), "react( \"func~( 100 )\" )" );
+	strictEqual( func._funcs.length, 0, "func._funcs.length" );
 	
 	ok( react( "func = ", func1 ), "react( \"func = \", func1 )" );
 	
 	strictEqual( foo, 150, "foo" );
+	
+	react( "delete", call, "; delete func" );
 } );
 
 test( "call w/o return value: function is valueArray, argument is literal", function() {
@@ -2435,8 +2442,10 @@ test( "call w/ return value: return value stored in a variable", function() {
 	
 	ok( equivArr( react.leak( "rea = sqr( x )" )._value, [ "(", sqr, x ] ), "react( \"rea = sqr( x )\" )" );
 	ok( objContent( rea._dep, [ sqr, x ] ), "react.leak( \"rea = sqr( x )\" )._dep" );
+	debugger;
+	react( sqrFunc, "~( x ); sqr~( 10 ); sqr~( x );" );
 	
-	react( "delete rea" );
+	react( "delete rea; delete sqr;" );
 } );
 
 
@@ -2546,6 +2555,30 @@ test( "operator overloading", function() {
 	
 	//operator assignment
 	strictEqual( react( opObj, "+=", 100 ), 106, "operator-assignment: react( opObj, \"+=\", 100 )" );
+} );
+
+test( "custom datatype", function() {
+	//example custom datatype
+	var Type = function( input ) {
+		this.value = input;
+	};
+	
+	Type.prototype = {
+		value : null
+	};
+	
+	ok( react( "Type = datatype", Type ), "react( \"Type = datatype\", Type )" );
+	strictEqual( react( "Type( 1235813 )" ).value, 1235813, "non-reactive instance: react( \"Type( 1235813 )\" )" );
+	
+	strictEqual( react( "inst = Type( x+2 )" ).value, x.valueOf()+2, "reactive instance: react( \"inst = Type( x+2 )\" ).value" );
+	strictEqual( react( "inst2 = Type( inst )" ).value, react( "inst" ), "reactive, depending instances: react( \"inst2 = Type( inst )\" ).value" );
+	ok( react( "x += 1" ), "react( \"x += 1\" )" );
+	strictEqual( react( "inst" ).value, x.valueOf()+2, "automatic update of reactive instance: react( \"inst\" ).value" );
+	strictEqual( react( "inst2" ).value, react( "inst" ), "automatic update of depending reactive instance: react( \"inst2\" ).value" );
+	
+	//react( "Type~( x+2 ); Type~( inst );" );
+	
+	react( "delete inst2; delete inst;" );
 } );
 
 module( "Context sensitive variables" );

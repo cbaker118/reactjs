@@ -421,10 +421,10 @@
 	
 	var Datatype = function( constructor ) {
 			//identify data properties reflecting the instances state
-			dataProps = [];
+			var type, key, dataProps = [];
 			for ( key in constructor.prototype ) {
 				type = typeof constructor.prototype[ key ];
-				if ( constructor.prototype[ key ] === null || ( type !== "object" && type !== "function" ) )
+				if ( ( type !== "object" && type !== "function" ) || constructor.prototype[ key ] === null )
 					dataProps.push( key );
 			}
 			
@@ -432,7 +432,8 @@
 			return function() {
 				var ret, inst;
 				
-				ret = inst = constructor.apply( Object.create( constructor.prototype ), arguments );
+				ret = inst = Object.create( constructor.prototype );
+				constructor.apply( inst, arguments );
 				
 				inst._dep = { depObj : true };
 				
@@ -476,6 +477,8 @@
 										cur = this[ 1 ].valueOf( ctxt, data );
 									//else if ( typeof this[ 1 ] === "function" )
 									//	cur = this[ 1 ]( ctxt, data );
+									else if ( this[ 1 ]._isValArray )
+										cur = this[ 1 ].valueOf();
 									else
 										cur = this[ 1 ];
 									
@@ -488,6 +491,8 @@
 										cur = this[ idx ].valueOf( ctxt, data );
 									//else if ( typeof this[ idx ] === "function" )
 									//	cur = this[ idx ]( ctxt, data );
+									else if ( this[ idx ]._isValArray )
+										cur = this[ idx ].valueOf();
 									else
 										cur = this[ idx ];
 									
