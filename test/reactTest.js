@@ -2530,6 +2530,12 @@ test( "operator overloading", function() {
 test( "custom datatype", function() {
 	//example custom datatype
 	var Type = function( input ) {
+		//react() cannot explicitly call a function as constructor. Therefore, to use 
+		//constuctors in react(), they must be able to be called as simple functions, but
+		//act as constructors.
+		if ( !(this instanceof Type) )
+			return new Type( input );
+		
 		this.value = input;
 	};
 	
@@ -2537,11 +2543,19 @@ test( "custom datatype", function() {
 		value : null
 	};
 	
-	ok( react( "Type = datatype", Type ), "react( \"Type = datatype\", Type )" );
-	strictEqual( react( "Type( 1235813 )" ).value, 1235813, "non-reactive instance: react( \"Type( 1235813 )\" )" );
+	strictEqual( react( Type, "( 1235813 )" ).value, 1235813, "non-reactive instance: react( Type, \"( 1235813 )\" )" );
 	
-	strictEqual( react( "inst = Type( x+2 )" ).value, x.valueOf()+2, "reactive instance: react( \"inst = Type( x+2 )\" ).value" );
+	ok( react( "Type = ", Type ), "react( \"Type = \", Type )" );
+	
+	strictEqual( react( "Type( 1235813 )" ).value, 1235813, "reactive (on function side) instance: react( \"Type( 1235813 )\" )" );
+	strictEqual( react.leak( "Type" )._funcs.length, 0, "react.leak( \"Type\" )._funcs.length" );
+	
+	strictEqual( react( Type, "( x )" ).value, x.valueOf(), "reactive (on argument side) instance: react( Type, \"( x )\" )" );
+	strictEqual( x._funcs.length, 0, "x._funcs.length" );
+	
+	strictEqual( react( "inst = ", Type, "( x+2 )" ).value, x.valueOf()+2, "reactive instance: react( \"inst = \", Type, \"( x+2 )\" ).value" );
 	strictEqual( react( "inst2 = Type( inst )" ).value, react( "inst" ), "reactive, depending instances: react( \"inst2 = Type( inst )\" ).value" );
+	strictEqual( react.leak( "Type" )._funcs.length, 0, "react.leak( \"Type\" )._funcs.length" );
 	ok( react( "x += 1" ), "react( \"x += 1\" )" );
 	strictEqual( react( "inst" ).value, x.valueOf()+2, "automatic update of reactive instance: react( \"inst\" ).value" );
 	strictEqual( react( "inst2" ).value, react( "inst" ), "automatic update of depending reactive instance: react( \"inst2\" ).value" );

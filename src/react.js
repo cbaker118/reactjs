@@ -91,16 +91,16 @@
 			func : null
 		};
 	
-	var Reactive = function( val, noPartOf ) {
+	var Reactive = function( val, dontTrack ) {
 			if ( !(this instanceof Reactive ) )
-				return new Reactive( val, noPartOf );
+				return new Reactive( val, dontTrack );
 			
 			this._guid	  = Reactive.prototype._guid++;
 			this._dep 	  = null;
 			this._partOf = {};
 			this._funcs  = [];
 			
-			this.set( val, noPartOf );
+			this.set( val, dontTrack );
 		};
 	
 	Reactive.prototype = {
@@ -320,7 +320,7 @@
 			return this;
 		},*/
 		
-		set : function( val, noPartOf ) {
+		set : function( val, dontTrack ) {
 			var id;
 			
 			//save previous value temporarily, so invalidation has access to it, if necessary
@@ -356,7 +356,7 @@
 			else if ( val && ( val._isCtxtEval || val._hasCtxtEval ) )
 				this._hasCtxtEval = true;
 			
-			if ( !noPartOf ) {
+			if ( !dontTrack ) {
 				//set new partOf on dependencies' side
 				for ( id in this._dep ) {
 					if ( id === "depObj" )
@@ -419,21 +419,11 @@
 		_funcs  : null
 	};
 	
-	var Datatype = function( constructor ) {
-			//function that creates instances
-			return function() {
-				var ret = Object.create( constructor.prototype );
-				constructor.apply( ret, arguments );
-				
-				return ret;
-			};
-		};
-	
 	var Interpreter = ( function() {
 			//streamlined pratt parser - derived from http://javascript.crockford.com/tdop/tdop.html
 			//expression evaluation directly included into the parse process
 			
-			var noPartOf = false;
+			var dontTrack = false;
 			
 			//value array properties
 			var makeValArray = ( function() {
@@ -2608,16 +2598,6 @@
 				}
 			} );
 			
-			operator( "datatype", "prefix", 90, null, function( f ) {
-				if ( typeof f !== "function" )
-					error( "'datatype' has to be followed by a function!" );
-				
-				if ( this.prevToken !== "=" )
-					error( "'datatype' has to be preceded by an assignment!" );
-				
-				return Datatype( f );
-			} );
-			
 			operator( "contextVariable", "prefix", 90, null, function( f ) {
 				if ( typeof f !== "function" )
 					error( "'contextVariable' has to be followed by a function!" );
@@ -2650,9 +2630,10 @@
 					argLits = [],
 					varInArgs = false,
 					argsArr,
-					tmp,
+					val,
 					rea,
-					track = !noPartOf && !this.prevToken && !this.nextToken;
+					key,
+					track = !dontTrack && !this.prevToken && !this.nextToken;
 				
 				//create arguments array to bind
 				if ( args && args._isValArray && args[ 0 ] === "," ) {
@@ -2666,28 +2647,20 @@
 						argsArr._dep = args._isValArray ? args._dep : args;
 				}
 				
-				//handle function part
+				//get function and context literal
 				if ( !func ) {
 					funcLit = func;
 				
 				} else if ( func._isValArray ) {
 					funcLit = func.valueOf();
 					
-					if ( track )
-						for ( var key in func._dep ) {
-							if ( key === "depObj" )
-								continue;
-							
-							func._dep[ key ]._bind( func, argsArr, true );
-						}
-					
 					if ( func._dep )
 						rea = makeValArray( [ "(", func ], func._dep );
 					
 					if ( func[ 0 ] === "." && func.length > 3 ) {
-						tmp = func[ func.length-1 ].pop();
+						val = func[ func.length-1 ].pop();
 						ctxtLit = func.valueOf();
-						func.push( tmp );
+						func.push( val );
 					
 					} else {
 						ctxtLit = func[ 1 ].valueOf();
@@ -2696,42 +2669,32 @@
 				} else if ( func._isVar ) {
 					funcLit = func._value;
 					
-					if ( !func._locked ) {
-						if ( track )
-							func._bind( func, argsArr, true );
-						
+					if ( !func._locked )
 						rea = makeValArray( [ "(", func ], func );
-					}
 				
 				} else {
 					funcLit = func;
 				}
 				
-				//handle arguments part
+				//get argument literals
 				for ( var i = 0, l = argsArr.length; i<l; i++ ) {
 					if ( !argsArr[ i ] ) {
 						argLits.push( argsArr[ i ] );
 					
 					} else if ( argsArr[ i ]._isValArray ) {
-						for ( var key in argsArr[ i ]._dep ) {
+						for ( key in argsArr[ i ]._dep ) {
 							if ( key === "depObj" )
 								continue;
 							
-							if ( track )
-								argsArr[ i ]._dep[ key ]._bind( func, argsArr, true );
-							
 							varInArgs = true;
+							break;
 						}
 						
 						argLits.push( argsArr[ i ].valueOf() );
 					
 					} else if ( argsArr[ i ]._isVar ) {
-						if ( !argsArr[ i ]._locked ) {
-							if ( track )
-								argsArr[ i ]._bind( func, argsArr, true );
-							
+						if ( !argsArr[ i ]._locked )
 							varInArgs = true;
-						}
 						
 						argLits.push( argsArr[ i ].valueOf() );
 					
@@ -2740,20 +2703,56 @@
 					}
 				}
 				
+				try {
+					val = funcLit.apply( ctxtLit, argLits );
+				} catch ( e ) {
+					error( "A reactive function call causes problems: " + e.message );
+				}
+				
+				//bind listening functions to reactive parts of this call
+				//if we want to track changes at all
+				//don't track, if:
+				// - tracking is explicitly turned of by dontTrack
+				// - the return value of this function is processed further (function is preceeded or followed by an operator)
+				// - the function acts as a constructor (only relevant, if the previous condition is not fulfilled)
+				if ( !dontTrack && !this.prevToken && !this.nextToken && !(val instanceof funcLit) ) {
+					if ( func ) {
+						if ( func._isValArray ) {
+							for ( key in func._dep ) {
+								if ( key === "depObj" )
+									continue;
+								
+								func._dep[ key ]._bind( func, argsArr, true );
+							}
+							
+						} else if ( func._isVar && !func._locked ) {
+							func._bind( func, argsArr, true );
+						}
+					}
+					
+					for ( var i = 0, l = argsArr.length; i<l; i++ ) {
+						if ( argsArr[ i ] ) {
+							if ( argsArr[ i ]._isValArray ) {
+								for ( key in argsArr[ i ]._dep ) {
+									if ( key === "depObj" )
+										continue;
+									
+									argsArr[ i ]._dep[ key ]._bind( func, argsArr, true );
+								}
+							
+							} else if ( argsArr[ i ]._isVar && !argsArr[ i ]._locked ) {
+								argsArr[ i ]._bind( func, argsArr, true );
+							}
+						}
+					}
+				}
+				
 				if ( rea )
 					rea.addDep( args && args._isValArray ? args._dep : args ).push( args );
 				else if ( varInArgs )
 					rea = arrFunc( funcLit, args );
 				
-				if ( !rea || ( !this.prevToken && !this.nextToken ) ) {
-					try {
-						tmp = funcLit.apply( ctxtLit, argLits );
-					} catch ( e ) {
-						error( "A reactive function call causes problems: " + e.message );
-					}
-				}
-				
-				return rea || tmp;
+				return rea || val;
 			} );
 			
 			operator( ":(", "call", 100, null, function( func, args ) {
@@ -2777,7 +2776,7 @@
 				//handle function part
 				if ( func ) {
 					if ( func._isValArray ) {
-						if ( !noPartOf )
+						if ( !dontTrack )
 							for ( var key in func._dep ) {
 								if ( key === "depObj" )
 									continue;
@@ -2789,7 +2788,7 @@
 					
 					} else if ( func._isVar ) {
 						if ( !func._locked ) {
-							if ( !noPartOf )
+							if ( !dontTrack )
 								func._bind( func, argsArr, true );
 							
 							rea = makeValArray( [ "(", func ], func );
@@ -2805,7 +2804,7 @@
 								if ( key === "depObj" )
 									continue;
 								
-								if ( !noPartOf )
+								if ( !dontTrack )
 									argsArr[ i ]._dep[ key ]._bind( func, argsArr, true );
 								
 								varInArgs = true;
@@ -2813,7 +2812,7 @@
 						
 						} else if ( argsArr[ i ]._isVar ) {
 							if ( !argsArr[ i ]._locked ) {
-								if ( !noPartOf )
+								if ( !dontTrack )
 									argsArr[ i ]._bind( func, argsArr, true );
 								
 								varInArgs = true;
@@ -3513,7 +3512,7 @@
 					if ( val && val._isValArray )
 						val.makeVar();
 					
-					Reactive.call( v, val, noPartOf );
+					Reactive.call( v, val, dontTrack );
 					
 					if ( key ) {
 						v._key = key;
@@ -3596,7 +3595,7 @@
 						if ( this.table[ key ]._locked )
 							error( "Bad lvalue: variable is immutable (constant)." );
 						
-						return this.table[ key ].set( val, noPartOf );
+						return this.table[ key ].set( val, dontTrack );
 					}
 					
 					var v = Variable( key, val );
@@ -3766,7 +3765,7 @@
 							var ret;
 							
 							if ( arguments[ 0 ] === "no partOf" ) {
-								noPartOf = true;
+								dontTrack = true;
 								arguments = Array.prototype.slice.call( arguments, 1 );
 							}
 							
@@ -3777,7 +3776,7 @@
 							
 							interpret.ctxt = window;
 							interpret.data = null;
-							noPartOf = false;
+							dontTrack = false;
 							
 							return ret;
 						
@@ -3785,7 +3784,7 @@
 							interpret.ctxt = window;
 							interpret.data = null;
 							
-							noPartOf = false;
+							dontTrack = false;
 							
 							throw ( error );
 						}
