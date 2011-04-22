@@ -2563,43 +2563,19 @@ test( "custom datatype", function() {
 	react( "delete inst2; delete inst; delete Type;" );
 } );
 
+
 module( "Context sensitive variables" );
 
-test( "simple function variable", function() {
-	react( "ctxtVar = contextVariable", function( data ) {
-			return ( this !== window ? "ctxt" : "" ) + ( data ? "data" : "" );
+test( "", function() {
+	var ctxtVar = react.leak( "ctxtVar{ t } = ", function( data ) {
+			return ( data || "" );
 		} );
 	
-	ok( true, "context variable: react( \"ctxtVar = contextVariable\", function( data ) { return ( this !== window ? \"ctxt\" : \"\" ) + ( data ? \"data\" : \"\" ) } )" );
-	
-	strictEqual( react( "#ctxtVar" ), "", "react( \"#ctxtVar\" ) === \"\"" );
-	strictEqual( react.context()( "#ctxtVar" ), "", "react.context()( \"#ctxtVar\" ) === \"\"" );
-	strictEqual( react.context( {} )( "#ctxtVar" ), "ctxt", "react.context( {} )( \"#ctxtVar\" ) === \"ctxt\"" );
-	strictEqual( react.context( {}, true )( "#ctxtVar" ), "ctxtdata", "react.context( {}, true )( \"#ctxtVar\" ) === \"ctxtdata\"" );
-	strictEqual( react.context( null, true )( "#ctxtVar" ), "data", "react.context( null, true )( \"#ctxtVar\" ) === \"data\"" );
+	ok( true, "context variable: ctxtVar = react( \"ctxtVar{ t } = \", function( data ) { return ( data ? \"data\" : \"\" ) } )" );
+	strictEqual( react( "#ctxtVar" ), true, "react( \"#ctxtVar\" )" );
+	strictEqual( react( "#ctxtVar{ x }" ), x.valueOf(), "react( \"#ctxtVar{ x }\" )" );
 	
 	react( "delete ctxtVar" );
-} );
-
-test( "variable with value compound of literal and function variable", function() {
-	react( "ctxtVar = contextVariable", function( data ) {
-			return ( this !== window ? "ctxt" : "" ) + ( data ? "data" : "" );
-		} ),
-		rea = react.leak( "rea = 'r_'+ctxtVar" );
-	
-	ok( true, "context variable: react( \"ctxtVar = contextVariable\", function( data ) { return ( this !== window ? \"ctxt\" : \"\" ) + ( data ? \"data\" : \"\" ) } )" );
-	ok ( rea, "var depending on a func var: rea = react.leak( \"rea = 'r_'+ctxtVar\" )" );
-	
-	strictEqual( react( "#rea" ), "r_", "react( \"#rea\" ) === \"r_\"" );
-	strictEqual( react.context()( "#rea" ), "r_", "react.context()( \"#rea\" ) === \"r_\"" );
-	strictEqual( react.context( {} )( "#rea" ), "r_ctxt", "react.context( {} )( \"#rea\" ) === \"r_ctxt\"" );
-	strictEqual( react.context( {}, true )( "#rea" ), "r_ctxtdata", "react.context( {}, true )( \"#rea\" ) === \"r_ctxtdata\"" );
-	strictEqual( react.context( null, true )( "#rea" ), "r_data", "react.context( null, true )( \"#rea\" ) === \"r_data\"" );
-	
-	ok( react( "rea -= ctxtVar" ), "react( \"rea -= ctxtVar\" )" );
-	strictEqual( rea._ctxtEval, undefined, "rea is no longer a function variable." );
-	
-	react( "delete rea; delete ctxtVar;" );
 } );
 
 /*

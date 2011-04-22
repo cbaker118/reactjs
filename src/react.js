@@ -86,339 +86,6 @@
 			throw new Error( "react.js | " + msg );
 		};
 	
-	var ctxtVarCarrier = {
-			ctxtVarCarrier : true,
-			func : null
-		};
-	
-	var Reactive = function( val, dontTrack ) {
-			if ( !(this instanceof Reactive ) )
-				return new Reactive( val, dontTrack );
-			
-			this._guid	  = Reactive.prototype._guid++;
-			this._dep 	  = null;
-			this._partOf = {};
-			this._funcs  = [];
-			
-			this.set( val, dontTrack );
-		};
-	
-	Reactive.prototype = {
-		valueOf : function( ctxt, data ) {
-			try {
-				if ( "_prev" in this )
-					return this._valueOf();
-				
-				if ( this._isCtxtEval )
-					return this._value.call( ctxt, data );
-				
-				if ( this._hasCtxtEval )
-					return this._valueOf( ctxt, data );
-				
-				if ( !("_evaled" in this) )
-					this._evaled = this._valueOf();
-				
-				return this._evaled;
-			
-			} catch( e ) {
-				error( "react.reactive.valueOf: " + e.message );
-			}
-		},
-		toString : function( ctxt, data ) {
-			try {
-				if ( this._isCtxtEval )
-					return String( this._value.apply( ctxt, data ) );
-				
-				if ( this._hasCtxtEval )
-					return this._toString  ? this._toString( ctxt, data ) : String( this.valueOf( ctxt, data ) );
-				
-				if ( !("_string" in this) )
-					this._string = this._toString  ? this._toString() : String( this.valueOf() );
-				
-				return this._string;
-			
-			} catch( e ) {
-				error( "react.reactive.toString: " + e.message );
-			}
-		},
-		_prevValueOf : function( ctxt, data ) {
-			return  "_prev" in this ? 
-					( this._prev && this._prev._prevValueOf ?
-						this._prev._prevValueOf( ctxt, data ) :
-						this._prev ) :
-					this._value && this._value._prevValueOf ?
-						this._value._prevValueOf( ctxt, data ) :
-						this._value;
-		},
-		
-		_bind : function( f, args, eval ) {
-			this._funcs.push( {
-				func : f,
-				args : args,
-				eval : eval
-			} );
-			
-			return this;
-		},
-		_unbind : function( f, args ) {
-			if ( arguments.length === 0 ) {
-				//unbind all functions, if no function is specified
-				this._funcs.length = 0;
-			}
-			
-			var fIdx = this._funcs.length,
-				call,
-				argIdx,
-				funcsEquiv,
-				argsEquiv;
-			
-			
-			while ( fIdx-- ) {
-				call = this._funcs[ fIdx ];
-				
-				//compare function and arguments
-				argIdx = args.length;
-				if ( equiv( call.func, f ) && equiv( call.args, args ) ) {
-					this._funcs.splice( fIdx, 1 )
-					return true;
-				}
-			}
-			
-			return false;
-		},
-		_trigger : function() {
-			var i = 0,
-				l = this._funcs.length,
-				call, func, ctxt,
-				j, m, args;
-			//debugger;
-			while ( i < l ) {
-				call = this._funcs[ i++ ];
-				args = call.args;
-				
-				if ( call.func._isValArray && call.func._propAccess ) {
-					var ctxt = call.func[ 1 ].valueOf(),
-						prop,
-						j = 2,
-						m = call.func.length-1;
-					
-					while ( j<m )
-						ctxt = ctxt[ call.func[ j++ ].valueOf() ];
-					
-					prop = call.func[ j ].valueOf();
-					
-					func = ctxt[ prop ];
-				
-				} else {
-					func = call.func._isValArray ? call.func.valueOf() : call.func._isVar ? call.func._value : call.func;
-				}
-				
-				if ( call.eval ) {
-					args = [];
-					j = call.args.length;
-					while ( j-- ) {
-						args[ j ] = call.args[ j ].valueOf();
-					}
-				}
-				
-				try {
-					func.apply( ctxt || this, args );
-				} catch( e ) {
-					error( "A reactive function call causes problems: " + e.message );
-				}
-			}
-			
-			return this;
-		},
-		_invalidate : function() {
-			delete this._evaled;
-			delete this._string;
-			
-			this._hasCtxtEval = false;
-			for ( var id in this._dep ) {
-				if ( this._dep[ id ]._hasCtxtEval ) {
-					this._hasCtxtEval = true;
-					break;
-				}
-			}
-			
-			for ( var id in this._partOf )
-				this._partOf[ id ]._invalidate();
-			
-			if ( this._funcs.length )
-				this._trigger();
-			
-			return this;
-		},
-		
-		/*addDep : function() {
-			var i, l = arguments.length, arg, id;
-			
-			if ( l && this._dep === null )
-				this._dep = { depObj:true };
-			
-			for ( i = 0; i < l; i++ ) {
-				arg = arguments[ i ];
-				
-				if ( !arg )
-					continue;
-				
-				if ( arg.depObj ) {
-					for ( id in arg ) {
-						if ( id === "depObj" )
-							continue;
-						
-						if ( arg[ id ] && arg[ id ]._isVar ) {
-							this._dep[ arg[ id ]._guid ] = arg[ id ];
-							arg[ id ]._partOf[ this._guid ] = this;
-							
-							if ( arg[ id ]._hasCtxtEval )
-								this._hasCtxtEval = true;
-						}
-					}
-				
-				} else if ( arg._isVar ) {
-					this._dep[ arg._guid ] = arg;
-					arg._partOf[ this._guid ] = this;
-					
-					if ( arg._hasCtxtEval )
-						this._hasCtxtEval = true;
-				}
-			}
-			
-			return this;
-		},*/
-		/*rmvDep : function() {
-			var i, l = arguments.length, arg, id;
-			
-			if ( this._dep === null )
-				return this;
-			
-			for ( i = 0; i < l; i++ ) {
-				arg = arguments[ i ];
-				
-				if ( !arg )
-					continue;
-				
-				if ( arg._isVar ) {
-					delete arg._partOf[ this._guid ];
-					delete this._dep[ arg._guid ];
-				}
-			}
-			
-			if ( !this._hasCtxtEval )
-				return this;
-			
-			//check, if object is still evaluating under context
-			for ( id in this._dep ) {
-				if ( this._dep[ id ]._hasCtxtEval )
-					return this;
-			}
-			
-			this._hasCtxtEval = false;
-			
-			return this;
-		},*/
-		
-		set : function( val, dontTrack ) {
-			var id;
-			
-			//save previous value temporarily, so invalidation has access to it, if necessary
-			this._prev = this._value;
-			
-			//set new value
-			this._value = val && val.ctxtVarCarrier ? val.func : val;
-			
-			//delete partOfs on dependencies side
-			for ( id in this._dep ) {
-				if ( id === "depObj" )
-					continue;
-				
-				if ( this._dep[ id ]._partOf )
-					delete this._dep[ id ]._partOf[ this._guid ];
-			}
-			
-			//set new dependency
-			if ( val )
-				this._dep = ( val && val._dep ) || null;
-			
-			//invalidate
-			this._invalidate();
-			
-			//delete previous value
-			delete this._prev;
-			
-			//identify context evaluation
-			this._isCtxtEval  = false;
-			this._hasCtxtEval = false;
-			if ( val && val.ctxtVarCarrier )
-				this._isCtxtEval = true;
-			else if ( val && ( val._isCtxtEval || val._hasCtxtEval ) )
-				this._hasCtxtEval = true;
-			
-			if ( !dontTrack ) {
-				//set new partOf on dependencies' side
-				for ( id in this._dep ) {
-					if ( id === "depObj" )
-						continue;
-					
-					this._dep[ id ]._partOf[ this._guid ] = this;
-				}
-			}
-			
-			return this;
-		},
-		"delete" : function() {
-			var id;
-			
-			//save previous value temporarily, so invalidation has access to it, if necessary
-			//this._prev = this._value;
-			
-			delete this._value;
-			
-			//invalidate
-			//this._invalidate();
-			
-			//delete previous value
-			//delete this._prev;
-			
-			//delete partOfs on dependencies side
-			for ( id in this._dep ) {
-				if ( id === "depObj" )
-					continue;
-				
-				if ( this._dep[ id ]._partOf )
-					delete this._dep[ id ]._partOf[ this._guid ];
-			}
-			
-			delete this._string;
-			delete this._evaled;
-			
-			delete this._isReactive;
-			delete this._isCtxtEval;
-			delete this._hasCtxtEval;
-			
-			delete this._guid
-			delete this._dep;
-			delete this._partOf;
-			this._funcs.length = 0;
-			delete this._funcs;
-			
-			return true;
-		},
-		
-		_value  : undefined,
-		
-		_isReactive  : true,
-		_isCtxtEval  : false,
-		_hasCtxtEval : false,
-		
-		_guid   : 0,
-		_dep    : null,
-		_partOf : null,
-		_funcs  : null
-	};
-	
 	var Interpreter = ( function() {
 			//streamlined pratt parser - derived from http://javascript.crockford.com/tdop/tdop.html
 			//expression evaluation directly included into the parse process
@@ -427,21 +94,17 @@
 			
 			//value array properties
 			var makeValArray = ( function() {
-					var valueOf = function( ctxt, data ) {
+					var valueOf = function() {
 							try {
 								var op = this[ 0 ],
-									len = this.length-1,
+									idx = this.length,
 									ret,
 									cur;
 								
-								if ( this.length === 2 ) {
+								if ( idx === 2 ) {
 									//unary
-									if ( this[ 1 ]._isVar )
-										cur = this[ 1 ].valueOf( ctxt, data );
-									//else if ( typeof this[ 1 ] === "function" )
-									//	cur = this[ 1 ]( ctxt, data );
-									else if ( this[ 1 ]._isValArray )
-										cur = this[ 1 ].valueOf();
+									if ( this[ 1 ]._isVar || this[ 1 ]._isValArray )
+										cur = this[ 1 ].valueOf.apply( this[ 1 ], arguments );
 									else
 										cur = this[ 1 ];
 									
@@ -449,13 +112,9 @@
 								}
 								
 								//binary with two or more operands
-								for ( var idx = this.length-1; idx > 0; idx-- ) {
-									if ( this[ idx ]._isVar )
-										cur = this[ idx ].valueOf( ctxt, data );
-									//else if ( typeof this[ idx ] === "function" )
-									//	cur = this[ idx ]( ctxt, data );
-									else if ( this[ idx ]._isValArray )
-										cur = this[ idx ].valueOf();
+								while( idx--, idx > 0 ) {
+									if ( this[ idx ]._isVar || this[ idx ]._isValArray  )
+										cur = this[ idx ].valueOf.apply( this[ idx ], arguments );
 									else
 										cur = this[ idx ];
 									
@@ -465,7 +124,7 @@
 								return ret;
 							
 							} catch( e ) {
-								error( "_isValArray.valueOf: " + e.message );
+								error( "valArray.valueOf: " + e.message );
 							}
 						},
 						toString = function() {
@@ -535,10 +194,10 @@
 								return str;
 							
 							} catch( e ) {
-								error( "_isValArray.toString:" + e.message );
+								error( "valArray.toString:" + e.message );
 							}
 						},
-						_prevValueOf = function( ctxt, data ) {
+						_prevValueOf = function() {
 							try {
 								var op = this[ 0 ],
 									len = this.length-1,
@@ -547,10 +206,8 @@
 								
 								if ( this.length === 2 ) {
 									//unary
-									if ( this[ 1 ]._isVar )
-										cur = this[ 1 ]._prevValueOf( ctxt, data );
-									//else if ( typeof this[ 1 ] === "function" )
-									//	cur = this[ 1 ]( ctxt, data );
+									if ( this[ 1 ]._isVar || this[ 1 ]._isValArray )
+										cur = this[ 1 ]._prevValueOf.apply( this[ 1 ], arguments );
 									else
 										cur = this[ 1 ];
 									
@@ -559,10 +216,8 @@
 								
 								//binary with two or more operands
 								for ( var idx = this.length-1; idx > 0; idx-- ) {
-									if ( this[ idx ]._isVar )
-										cur = this[ idx ]._prevValueOf( ctxt, data );
-									//else if ( typeof this[ idx ] === "function" )
-									//	cur = this[ idx ]( ctxt, data );
+									if ( this[ idx ]._isVar || this[ idx ]._isValArray  )
+										cur = this[ idx ]._prevValueOf.apply( this[ idx ], arguments );
 									else
 										cur = this[ idx ];
 									
@@ -572,7 +227,7 @@
 								return ret;
 							
 							} catch( e ) {
-								error( "_isValArray._prevValueOf: " + e.message );
+								error( "valArray._prevValueOf: " + e.message );
 							}
 						},
 						addDep = function() {
@@ -962,6 +617,7 @@
 			operator( ";" );
 			operator( ")" );		
 			operator( "]" );
+			operator( "}" );
 			
 			operator( "clean", "prefix", 0, null, function( undef, interpreter ) {
 				return interpreter.nameTable.clean();
@@ -1354,7 +1010,7 @@
 				if ( ( v._isVar && v === val ) || ( v.id === "(id)" && val && v.value === val._key ) )
 					return val;
 				
-				return interpreter.nameTable.set( v._key || v.value, val );
+				return interpreter.nameTable.set( v._key || v.value, val, v._context );
 			} );
 			
 			operator( "(op=)", "infixr", 10, function( expr ) {
@@ -2590,26 +2246,46 @@
 				},
 				
 				ref : function( ref ) {
-					return ref.valueOf( interpret.ctxt, interpret.data );
+					return ref.valueOf();
 				},
 				
 				arr : function( arr ) {
-					return arr.valueOf( interpret.ctxt, interpret.data );
+					return arr.valueOf();
 				}
 			} );
 			
-			operator( "contextVariable", "prefix", 90, null, function( f ) {
-				if ( typeof f !== "function" )
-					error( "'contextVariable' has to be followed by a function!" );
-				
-				if ( this.prevToken !== "=" )
-					error( "'contextVariable' has to be preceded by an assignment!" );
-				
-				var ret = Object.create( ctxtVarCarrier );
-				ret.func = f;
-				
-				return ret;
-			} );
+			operator( "{", "infix", 100, function( expr ) {
+					this.first = expr.o[ expr.p ];
+					this.second = undefined;
+					this.ledEval = operators[ "{" ].ledEval;
+					expr.o[ expr.p ] = this;
+					
+					return {
+						o : this,
+						p : "second",
+						rbp : 0,
+						end : "}",
+						parent : expr,
+						prevToken : expr.o.id
+					};
+				},
+				function( v, ctxt ) {
+					if ( !v._isVar && v.id !== "(id)" )
+						error( "{ must be preceeded by a variable!" );
+					
+					if ( ctxt && ctxt._isValArray && ctxt[ 0 ] === "," )
+						ctxt = ctxt.slice( 1 );
+					else
+						ctxt = [ ctxt ];
+					
+					if ( v._isVar )
+						v = Object.create( v );
+					
+					v._context = ctxt;
+					
+					return v;
+				}
+			);
 			
 			var arrFunc = function( func, args ) {
 					if ( func.inverse ) {
@@ -2985,25 +2661,7 @@
 				objPropEval
 			);
 			
-			operator( "{", "infix", 120, function( expr ) {
-					this.first = expr.o[ expr.p ];
-					this.second = undefined;
-					this.ledEval = operators[ "{" ].ledEval;
-					expr.o[ expr.p ] = this;
-					
-					return {
-						o : this,
-						p : "second",
-						rbp : 0,
-						end : "}",
-						parent : expr,
-						prevToken : expr.o.id
-					};
-				},
-				{}
-			);
-			
-			operator( "(", "prefix", 130, function( expr ) {
+			operator( "(", "prefix", 120, function( expr ) {
 					this.first = undefined;
 					this.nudEval = operators[ "(" ].nudEval;
 					expr.o[ expr.p ] = this;
@@ -3062,10 +2720,12 @@
 					}
 					
 					if ( !expr.o.assignment && ( expr.o.call || expr.o.id !== "(" ) && expr.o.first && expr.o.first.id === "(id)" ) {
-						if ( !( expr.o.first.value in this.nameTable.table ) )
-							error( expr.o.first.value + " is not defined." );
-						
-						expr.o.first = this.nameTable.table[ expr.o.first.value ];
+						if ( !( expr.o.first.value in this.nameTable.table ) ) {
+							if ( expr.o.id !== "{" || expr.nextToken !== "=" )
+								error( expr.o.first.value + " is not defined." );
+						} else {						
+							expr.o.first = this.nameTable.table[ expr.o.first.value ];
+						}
 					}
 					
 					//use the value of a variable in case of assigning to the same variable
@@ -3500,19 +3160,19 @@
 					return ret.value;
 				};
 			
-			//initializing interpreter
 			//Variable creation and properties
-			var Variable = function( key, val ) {
-					var v;
-					if ( this instanceof Variable )
-						v = this;
-					else
-						v = Object.create( Variable.prototype );
+			var Variable = function( key, val, ctxt ) {
+					var v = this instanceof Variable ? this : Object.create( Variable.prototype );
+					
+					v._guid	  = Variable.prototype._guid++;
+					v._dep 	  = null;
+					v._partOf = {};
+					v._funcs  = [];
+					
+					v.set( val );
 					
 					if ( val && val._isValArray )
 						val.makeVar();
-					
-					Reactive.call( v, val, dontTrack );
 					
 					if ( key ) {
 						v._key = key;
@@ -3523,26 +3183,76 @@
 						v._isNamed = false;
 					}
 					
+					v._context = ctxt;
+					
 					return v;
 				};
 			
-			Variable.prototype = Object.create( Reactive.prototype );
-			
-			each( {
-				_valueOf : function( ctxt, data ) {
-					return  this._value && this._value.valueOf ?
-							this._value.valueOf( ctxt, data ) :
-							this._value;
+			Variable.prototype = {
+				_guid   : 0,
+				_isReactive  : true,
+				
+				_value  : undefined,
+				_dep    : null,
+				_partOf : null,
+				_funcs  : null,
+				
+				_isVar : true,
+				_context : null,
+				
+				valueOf : function() {
+					try {
+						if ( arguments.length ) {
+							if ( typeof this._value === "function" )
+								return this._value.apply( null, arguments );
+							
+							else if ( this._value && this._value.valueOf )
+								return this._value.valueOf( arguments );
+							
+							else
+								return this._value;
+						}
+						
+						if ( !this.hasOwnProperty( "_evaled" ) ) {
+							if ( this._context ) {
+								if ( typeof this._value === "function" )
+									this._evaled = this._value.apply( null, this._context );
+								
+								else if ( this._value && this._value.valueOf )
+									this._evaled = this._value.valueOf.apply( null, this._context );
+								
+								else
+									this._evaled = this._value;
+							
+							} else if ( this._value && this._value.valueOf )
+								this._evaled = this._value.valueOf();
+							
+							else
+								this._evaled = this._value;
+						}
+						
+						return this._evaled;
+					
+					} catch( e ) {
+						error( "Variable.valueOf: " + e.message );
+					}
 				},
-				_toString : function() {
-					var str = this._isNamed ? this._key : "";
+				toString : function() {
+					try {
+						if ( !("_string" in this) ) {
+							this._string = this._isNamed ? this._key + " = " : "";
+						
+							if ( this._value && this._value._isValArray )
+								this._string += this._value.toString();
+							else
+								this._string += String( this._value );
+						}
+						
+						return this._string;
 					
-					if ( this._value && this._value._isValArray )
-						str += ( str ? " = " : "" ) + this._value.toString();
-					else
-						str += ( str ? " = " : "" ) + String( this._value );
-					
-					return str;
+					} catch( e ) {
+						error( "Variable.toString: " + e.message );
+					}
 				},
 				_prevValueOf : function( ctxt, data ) {
 					return  "_prev" in this ? 
@@ -3553,11 +3263,256 @@
 								this._value._prevValueOf( ctxt, data ) :
 								this._value;
 				},
-				_isVar : true
-			}, function( key, prop ) {
-				Variable.prototype[ key ] = prop;
-			} );
+				
+				_bind : function( f, args, eval ) {
+					this._funcs.push( {
+						func : f,
+						args : args,
+						eval : eval
+					} );
+					
+					return this;
+				},
+				_unbind : function( f, args ) {
+					if ( arguments.length === 0 ) {
+						//unbind all functions, if no function is specified
+						this._funcs.length = 0;
+					}
+					
+					var fIdx = this._funcs.length,
+						call,
+						argIdx,
+						funcsEquiv,
+						argsEquiv;
+					
+					
+					while ( fIdx-- ) {
+						call = this._funcs[ fIdx ];
+						
+						//compare function and arguments
+						argIdx = args.length;
+						if ( equiv( call.func, f ) && equiv( call.args, args ) ) {
+							this._funcs.splice( fIdx, 1 )
+							return true;
+						}
+					}
+					
+					return false;
+				},
+				_trigger : function() {
+					var i = 0,
+						l = this._funcs.length,
+						call, func, obj,
+						j, m, args;
+					
+					while ( i < l ) {
+						call = this._funcs[ i++ ];
+						args = call.args;
+						
+						if ( call.func._isValArray && call.func._propAccess ) {
+							var obj = call.func[ 1 ].valueOf(),
+								prop,
+								j = 2,
+								m = call.func.length-1;
+							
+							while ( j<m )
+								obj = obj[ call.func[ j++ ].valueOf() ];
+							
+							prop = call.func[ j ].valueOf();
+							
+							func = obj[ prop ];
+						
+						} else {
+							func = call.func._isValArray ? call.func.valueOf() : call.func._isVar ? call.func._value : call.func;
+						}
+						
+						if ( call.eval ) {
+							args = [];
+							j = call.args.length;
+							while ( j-- ) {
+								args[ j ] = call.args[ j ].valueOf();
+							}
+						}
+						
+						try {
+							func.apply( obj || this, args );
+						} catch( e ) {
+							error( "A reactive function call causes problems: " + e.message );
+						}
+					}
+					
+					return this;
+				},
+				_invalidate : function() {
+					delete this._evaled;
+					delete this._string;
+					
+					this._hasCtxtEval = false;
+					for ( var id in this._dep ) {
+						if ( this._dep[ id ]._hasCtxtEval ) {
+							this._hasCtxtEval = true;
+							break;
+						}
+					}
+					
+					for ( var id in this._partOf )
+						this._partOf[ id ]._invalidate();
+					
+					if ( this._funcs.length )
+						this._trigger();
+					
+					return this;
+				},
+				
+				/*addDep : function() {
+					var i, l = arguments.length, arg, id;
+					
+					if ( l && this._dep === null )
+						this._dep = { depObj:true };
+					
+					for ( i = 0; i < l; i++ ) {
+						arg = arguments[ i ];
+						
+						if ( !arg )
+							continue;
+						
+						if ( arg.depObj ) {
+							for ( id in arg ) {
+								if ( id === "depObj" )
+									continue;
+								
+								if ( arg[ id ] && arg[ id ]._isVar ) {
+									this._dep[ arg[ id ]._guid ] = arg[ id ];
+									arg[ id ]._partOf[ this._guid ] = this;
+									
+									if ( arg[ id ]._hasCtxtEval )
+										this._hasCtxtEval = true;
+								}
+							}
+						
+						} else if ( arg._isVar ) {
+							this._dep[ arg._guid ] = arg;
+							arg._partOf[ this._guid ] = this;
+							
+							if ( arg._hasCtxtEval )
+								this._hasCtxtEval = true;
+						}
+					}
+					
+					return this;
+				},*/
+				/*rmvDep : function() {
+					var i, l = arguments.length, arg, id;
+					
+					if ( this._dep === null )
+						return this;
+					
+					for ( i = 0; i < l; i++ ) {
+						arg = arguments[ i ];
+						
+						if ( !arg )
+							continue;
+						
+						if ( arg._isVar ) {
+							delete arg._partOf[ this._guid ];
+							delete this._dep[ arg._guid ];
+						}
+					}
+					
+					if ( !this._hasCtxtEval )
+						return this;
+					
+					//check, if object is still evaluating under context
+					for ( id in this._dep ) {
+						if ( this._dep[ id ]._hasCtxtEval )
+							return this;
+					}
+					
+					this._hasCtxtEval = false;
+					
+					return this;
+				},*/
+				
+				set : function( val ) {
+					var id;
+					
+					//save previous value temporarily, so invalidation has access to it, if necessary
+					this._prev = this._value;
+					
+					//set new value
+					this._value = val;
+					
+					//delete partOfs on dependencies side
+					for ( id in this._dep ) {
+						if ( id === "depObj" )
+							continue;
+						
+						if ( this._dep[ id ]._partOf )
+							delete this._dep[ id ]._partOf[ this._guid ];
+					}
+					
+					//set new dependency
+					if ( val )
+						this._dep = ( val && val._dep ) || null;
+					
+					//invalidate
+					this._invalidate();
+					
+					//delete previous value
+					delete this._prev;
+					
+					//identify context evaluation
+					delete this._isCtxtEval;
+					delete this._hasCtxtEval;
+					if ( val && val.ctxtVarCarrier )
+						this._isCtxtEval = true;
+					else if ( val && ( val._isCtxtEval || val._hasCtxtEval ) )
+						this._hasCtxtEval = true;
+					
+					if ( !dontTrack ) {
+						//set new partOf on dependencies' side
+						for ( id in this._dep ) {
+							if ( id === "depObj" )
+								continue;
+							
+							this._dep[ id ]._partOf[ this._guid ] = this;
+						}
+					}
+					
+					return this;
+				},
+				"delete" : function() {
+					var id;
+					
+					delete this._value;
+					
+					//delete partOfs on dependencies side
+					for ( id in this._dep ) {
+						if ( id === "depObj" )
+							continue;
+						
+						if ( this._dep[ id ]._partOf )
+							delete this._dep[ id ]._partOf[ this._guid ];
+					}
+					
+					delete this._string;
+					delete this._evaled;
+					
+					delete this._isReactive;
+					delete this._isCtxtEval;
+					delete this._hasCtxtEval;
+					
+					delete this._guid
+					delete this._dep;
+					delete this._partOf;
+					this._funcs.length = 0;
+					delete this._funcs;
+					
+					return true;
+				}
+			};
 			
+			//name table of interpreter
 			var NameTable = function( base ) {
 					var t;
 					if ( this instanceof NameTable )
@@ -3590,15 +3545,15 @@
 					
 					return del ? this.clean( vars ) : ret;
 				},
-				set : function( key, val ) {
+				set : function( key, val, ctxt ) {
 					if ( key in this.table ) {
 						if ( this.table[ key ]._locked )
 							error( "Bad lvalue: variable is immutable (constant)." );
 						
-						return this.table[ key ].set( val, dontTrack );
+						return this.table[ key ].set( val );
 					}
 					
-					var v = Variable( key, val );
+					var v = Variable( key, val, ctxt );
 					return this.table[ v._key ] = v;
 				},
 				"delete" : function( key ) {
@@ -3627,6 +3582,7 @@
 				}
 			};
 			
+			//initializing interpreter
 			var mathModule = ( function() {
 					var ret = {
 						pi		: Math.PI,
@@ -3742,20 +3698,20 @@
 						
 						ret = interpret.apply( react, arguments );
 						
-						if ( ret && ( ret._isValArray || ret._isVar ) )
-							ret = ret.valueOf( interpret.ctxt, interpret.data );
-						
-						interpret.ctxt = window;
-						interpret.data = null;
+						if ( ret ) {
+							if ( ret._isVar ) {
+								if ( typeof ret._value === "function" )
+									ret = ret._value;
+								else
+									ret = ret.valueOf();
+							
+							} else if ( ret._isValArray ) {
+								ret = ret.valueOf();
+							}
+						}
 						
 						return ret;
 					};
-				
-				react.context = function( ctxt, data ) {
-					interpret.ctxt = ctxt;
-					interpret.data = data;
-					return react;
-				};
 				
 				if ( template === "debugger" ) {
 					delete template;
@@ -3774,16 +3730,11 @@
 							if ( ret._isValArray )
 								ret = this.nameTable.set( null, ret );
 							
-							interpret.ctxt = window;
-							interpret.data = null;
 							dontTrack = false;
 							
 							return ret;
 						
 						} catch ( error ) {
-							interpret.ctxt = window;
-							interpret.data = null;
-							
 							dontTrack = false;
 							
 							throw ( error );
@@ -3796,9 +3747,6 @@
 				react.nameTable = setupVars( consts, template && template.nameTable, react );
 				
 				react.Interpreter   = Interpreter;
-				
-				interpret.ctxt = window;
-				interpret.data = null;
 				
 				return react;
 			};
