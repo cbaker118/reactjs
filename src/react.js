@@ -97,14 +97,21 @@
 					var valueOf = function() {
 							try {
 								var op = this[ 0 ],
-									idx = this.length,
+									idx,
 									ret,
-									cur;
+									cur,
+									context;
 								
+								context = Array.prototype.slice.apply( this._context || arguments );
+								idx = context.length;
+								while( idx-- )
+									context[ idx ] = context[ idx ].valueOf();
+								
+								idx = this.length;
 								if ( idx === 2 ) {
 									//unary
-									if ( this[ 1 ]._isVar || this[ 1 ]._isValArray )
-										cur = this[ 1 ].valueOf.apply( this[ 1 ], arguments );
+									if ( this[ 1 ]._isVar || this[ 1 ]._isValArray || this[ idx ]._isCtxtArray )
+										cur = this[ 1 ].valueOf.apply( this[ 1 ], context );
 									else
 										cur = this[ 1 ];
 									
@@ -113,8 +120,8 @@
 								
 								//binary with two or more operands
 								while( idx--, idx > 0 ) {
-									if ( this[ idx ]._isVar || this[ idx ]._isValArray  )
-										cur = this[ idx ].valueOf.apply( this[ idx ], arguments );
+									if ( this[ idx ]._isVar || this[ idx ]._isValArray || this[ idx ]._isCtxtArray )
+										cur = this[ idx ].valueOf.apply( this[ idx ], context );
 									else
 										cur = this[ idx ];
 									
@@ -344,7 +351,9 @@
 						},
 						inCtxt = function( ctxt ) {
 							delete this._isValArray;
+							this._isCtxtArray = true;
 							this._context = ctxt;
+							return this;
 						};
 					
 					return function( arr ) {
@@ -2279,13 +2288,15 @@
 					
 					if ( ctxt && ctxt._isValArray && ctxt[ 0 ] === "," )
 						ctxt = ctxt.slice( 1 );
-					else
+					else if ( ctxt !== undefined )
 						ctxt = [ ctxt ];
 					
-					if ( typeof v === "function" )
-						v._context = ctxt;
-					else
-						v = v.inCtxt( ctxt );
+					if ( ctxt ) {
+						if ( typeof v === "function" )
+							v._context = ctxt;
+						else
+							v = v.inCtxt( ctxt );
+					}
 					
 					return v;
 				}
@@ -3085,7 +3096,7 @@
 									}
 									
 									//put token into expression
-									if ( expr.o[ expr.p ] === undefined && token.id !== ")" ) {
+									if ( expr.o[ expr.p ] === undefined && token.id !== ")" && token.id !== "}" ) {
 										expr = token.nud( expr );
 										
 										if ( expr.parent && expr.o[ expr.p ] ) {
@@ -3206,17 +3217,17 @@
 				valueOf : function() {
 					try {
 						var idx, context;
-						if ( arguments.length ) {
+						if ( arguments.length && !this._context ) {
+							context = [];
+							idx = arguments.length;
+							while( idx-- )
+								context[ idx ] = arguments[ idx ].valueOf();
+							
 							if ( typeof this._value === "function" ) {
-								context = [];
-								idx = arguments.length;
-								while( idx-- )
-									context[ idx ] = arguments[ idx ].valueOf();
-								
 								return this._value.apply( null, context );
 							
 							} else if ( this._value && this._value.valueOf )
-								return this._value.valueOf( arguments );
+								return this._value.valueOf( context );
 							
 							else
 								return this._value;
@@ -3233,7 +3244,7 @@
 									this._evaled = this._value.apply( null, context );
 								
 								} else if ( this._value && this._value.valueOf )
-									this._evaled = this._value.valueOf.apply( null, this._context );
+									this._evaled = this._value.valueOf.apply( this._value, this._context );
 								
 								else
 									this._evaled = this._value;
@@ -3451,14 +3462,18 @@
 					var id;
 					
 					if ( val && this._value === val ) {
-						if ( this._context !== val._context ) {
+						if ( !val.hasOwnProperty( "_context" ) ) {
+							delete this._context;
+							this._invalidate();
+							
+						} if ( this._context !== val._context ) {
 							this._context = val._context;
 							delete val._context;
 							
 							//invalidate
 							this._invalidate();
 						}
-							
+						
 						return this;
 					}
 					
@@ -3729,7 +3744,7 @@
 						
 						ret = interpret.apply( react, arguments );
 						
-						if ( ret && ( ret._isVar || ret._isValArray ) )
+						if ( ret && ( ret._isVar || ret._isValArray || ret._isCtxtArray ) )
 							ret = ret.valueOf();
 						
 						return ret;
