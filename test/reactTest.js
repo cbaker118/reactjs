@@ -720,6 +720,10 @@ test( "intern (re-)assignment of named variables", function() {
 	ok( react( "rea = 5" ), "react( \"rea = 5\" )" );
 	strictEqual( react.leak( "rea = -rea * 0.5" )._value, -2.5, "prefix calculation with self-reference: react( \"rea = -rea * 0.5\" )._value === -2.5" );
 	
+	ok( react( "rea = rea2 = 10" ), "react( \"rea = rea2 = 10\" )" );
+	strictEqual( react( "rea" ), 10, "react( \"rea\" )" );
+	strictEqual( react( "rea2" ), 10, "react( \"rea2\" )" );
+	
 	raises( function() { react( "'str' = 5" ) }, "react( \"'str' = 5\" ) -> exception" );
 	strictEqual( ( function() {
 		try {
@@ -738,7 +742,7 @@ test( "intern (re-)assignment of named variables", function() {
 		}
 	}() ), "react.js | Bad lvalue: variable is immutable (constant).", "react( \"pi = 5\" ) -> exception" );
 	
-	react( "delete", rea );
+	react( "delete rea; delete rea2" );
 } );
 
 test( "intern delete of named variables", function() {
@@ -2566,16 +2570,32 @@ test( "custom datatype", function() {
 
 module( "Context sensitive variables" );
 
-test( "", function() {
-	var ctxtVar = react.leak( "ctxtVar{ t } = ", function( data ) {
-			return ( data || "" );
-		} );
+test( "simple context variables", function() {
+	react( "ctxtVar = ", function( data ) {
+		return ( "0" in arguments ? data : "" );
+	}, "{ t }" );
 	
-	ok( true, "context variable: ctxtVar = react( \"ctxtVar{ t } = \", function( data ) { return ( data ? \"data\" : \"\" ) } )" );
-	strictEqual( react( "#ctxtVar" ), true, "react( \"#ctxtVar\" )" );
-	strictEqual( react( "#ctxtVar{ x }" ), x.valueOf(), "react( \"#ctxtVar{ x }\" )" );
+	ok( true, "context variable with standard context t: react( \"ctxtVar = \", function( data ) { return ( data ? \"data\" : \"\" ) }, \"{ t }\" )" );
+	strictEqual( react( "ctxtVar" ), true, "evaluation in default context: react( \"ctxtVar\" )" );
+	strictEqual( react( "ctxtVar{ x }" ), x.valueOf(), "evaluation in specified context: react( \"ctxtVar{ x }\" )" );
+	strictEqual( react( "ctxtVar" ), true, "no change of evaluation in default context: react( \"ctxtVar\" )" );
+	strictEqual( react( "ctxtVar = ctxtVar{ f }" ), false, "change of context: react( \"ctxtVar = ctxtVar{ f }\" )" );
 	
 	react( "delete ctxtVar" );
+} );
+
+test( "complex context variables", function() {
+	react( "ctxtVar = ", function( data ) {
+		return ( "0" in arguments ? data : "" );
+	} );	//variable without default context
+	
+	react( "defCtxtVar = ctxtVar{ t }" );
+	react( "ctxtVar2 = (ctxtVar + ' to the max!'){ f }" );				//evaluate no context ctxtVar in context of ctxtVar2's context
+	react( "defCtxtVar2 = (defCtxtVar + ' to the max!'){ f }" );		//overwrite default context of value array constituents
+} );
+
+test( "reactive behaviour to context changes", function() {
+	
 } );
 
 /*

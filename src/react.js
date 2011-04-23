@@ -340,6 +340,11 @@
 							delete this._checkDep;
 							delete this.addDep;
 							delete this.makeVar;
+							delete this.makeCtxtArray;
+						},
+						inCtxt = function( ctxt ) {
+							delete this._isValArray;
+							this._context = ctxt;
 						};
 					
 					return function( arr ) {
@@ -349,8 +354,10 @@
 						arr.toString     = toString;
 						arr._prevValueOf = _prevValueOf;
 						
-						arr._isValArray  = true;
 						arr.makeVar		 = makeVar;
+						arr.inCtxt       = inCtxt;
+						
+						arr._isValArray  = true;
 						arr._dep		 = arr._dep || null;
 						arr._checkDep 	 = _checkDep;
 						arr.addDep		 = addDep;
@@ -1007,10 +1014,7 @@
 					return ctxtProp.ctxt[ ctxtProp.prop ] = val;
 				}
 				
-				if ( ( v._isVar && v === val ) || ( v.id === "(id)" && val && v.value === val._key ) )
-					return val;
-				
-				return interpreter.nameTable.set( v._key || v.value, val, v._context );
+				return interpreter.nameTable.set( v._key || v.value, val );
 			} );
 			
 			operator( "(op=)", "infixr", 10, function( expr ) {
@@ -2270,18 +2274,18 @@
 					};
 				},
 				function( v, ctxt ) {
-					if ( !v._isVar && v.id !== "(id)" )
-						error( "{ must be preceeded by a variable!" );
+					if ( !v._isVar && !v._isValArray && typeof v !== "function" )
+						error( "{ must be preceeded by a function, variable or value array!" );
 					
 					if ( ctxt && ctxt._isValArray && ctxt[ 0 ] === "," )
 						ctxt = ctxt.slice( 1 );
 					else
 						ctxt = [ ctxt ];
 					
-					if ( v._isVar )
-						v = Object.create( v );
-					
-					v._context = ctxt;
+					if ( typeof v === "function" )
+						v._context = ctxt;
+					else
+						v = v.inCtxt( ctxt );
 					
 					return v;
 				}
@@ -2707,6 +2711,10 @@
 				endExpr = function( expr, token ) {
 					var parent = expr.parent;
 					
+					//fix of assignTo for operator assignment with double assignment
+					if ( expr.o.assignment && !assignTo && expr.o.first )
+						assignTo = expr.o.first.id === "(id)" ? expr.o.first.value : expr.o.first._key;
+					
 					expr.nextToken = !token || !token.lbp ? undefined : token.id;
 					
 					//get variable objects
@@ -2729,8 +2737,8 @@
 					}
 					
 					//use the value of a variable in case of assigning to the same variable
-					if ( assignTo && !expr.o.assignment ) {
-						if ( expr.o.first._key === assignTo ) {
+					if ( assignTo ) {
+						if ( !expr.o.assignment && expr.o.first && expr.o.first._key === assignTo ) {
 							if ( expr.o.first._value._isValArray )
 								expr.o.first = makeValArray( expr.o.first._value.slice( 0 ), expr.o.first._value._dep );
 							else
@@ -2760,10 +2768,10 @@
 							//FIXME: hack for prefix assignment
 							//not nice, but works
 							if ( !expr.parent.o.first && expr.parent.o.assignment ) {
-								assignTo = expr.o[ expr.p ].id === "(id)" ? expr.o[ expr.p ].value : expr.o[ expr.p ]._key;;
+								assignTo = expr.o[ expr.p ].id === "(id)" ? expr.o[ expr.p ].value : expr.o[ expr.p ]._key;
 								expr.parent.o.first = expr.o[ expr.p ];
 							} else if ( expr.parent.o.id === "(" && !expr.o.first && expr.o.assignment ) {
-								assignTo = expr.o[ expr.p ].id === "(id)" ? expr.o[ expr.p ].value : expr.o[ expr.p ]._key;;
+								assignTo = expr.o[ expr.p ].id === "(id)" ? expr.o[ expr.p ].value : expr.o[ expr.p ]._key;
 								expr.o.first = expr.o[ expr.p ];
 							}
 						}
@@ -3161,7 +3169,7 @@
 				};
 			
 			//Variable creation and properties
-			var Variable = function( key, val, ctxt ) {
+			var Variable = function( key, val ) {
 					var v = this instanceof Variable ? this : Object.create( Variable.prototype );
 					
 					v._guid	  = Variable.prototype._guid++;
@@ -3171,9 +3179,6 @@
 					
 					v.set( val );
 					
-					if ( val && val._isValArray )
-						val.makeVar();
-					
 					if ( key ) {
 						v._key = key;
 						v._isNamed = true;
@@ -3182,8 +3187,6 @@
 						v._key = String( v._guid );
 						v._isNamed = false;
 					}
-					
-					v._context = ctxt;
 					
 					return v;
 				};
@@ -3202,11 +3205,17 @@
 				
 				valueOf : function() {
 					try {
+						var idx, context;
 						if ( arguments.length ) {
-							if ( typeof this._value === "function" )
-								return this._value.apply( null, arguments );
+							if ( typeof this._value === "function" ) {
+								context = [];
+								idx = arguments.length;
+								while( idx-- )
+									context[ idx ] = arguments[ idx ].valueOf();
+								
+								return this._value.apply( null, context );
 							
-							else if ( this._value && this._value.valueOf )
+							} else if ( this._value && this._value.valueOf )
 								return this._value.valueOf( arguments );
 							
 							else
@@ -3215,10 +3224,15 @@
 						
 						if ( !this.hasOwnProperty( "_evaled" ) ) {
 							if ( this._context ) {
-								if ( typeof this._value === "function" )
-									this._evaled = this._value.apply( null, this._context );
+								if ( typeof this._value === "function" ) {
+									context = [];
+									idx = this._context.length;
+									while( idx-- )
+										context[ idx ] = this._context[ idx ].valueOf();
+									
+									this._evaled = this._value.apply( null, context );
 								
-								else if ( this._value && this._value.valueOf )
+								} else if ( this._value && this._value.valueOf )
 									this._evaled = this._value.valueOf.apply( null, this._context );
 								
 								else
@@ -3436,6 +3450,18 @@
 				set : function( val ) {
 					var id;
 					
+					if ( val && this._value === val ) {
+						if ( this._context !== val._context ) {
+							this._context = val._context;
+							delete val._context;
+							
+							//invalidate
+							this._invalidate();
+						}
+							
+						return this;
+					}
+					
 					//save previous value temporarily, so invalidation has access to it, if necessary
 					this._prev = this._value;
 					
@@ -3451,23 +3477,23 @@
 							delete this._dep[ id ]._partOf[ this._guid ];
 					}
 					
-					//set new dependency
-					if ( val )
+					if ( val ) {
+						//set new dependency
 						this._dep = ( val && val._dep ) || null;
+						
+						if ( val._isValArray )
+							val.makeVar();
+						
+						//set context
+						this._context = val._context;
+						delete val._context;
+					}
 					
 					//invalidate
 					this._invalidate();
 					
 					//delete previous value
 					delete this._prev;
-					
-					//identify context evaluation
-					delete this._isCtxtEval;
-					delete this._hasCtxtEval;
-					if ( val && val.ctxtVarCarrier )
-						this._isCtxtEval = true;
-					else if ( val && ( val._isCtxtEval || val._hasCtxtEval ) )
-						this._hasCtxtEval = true;
 					
 					if ( !dontTrack ) {
 						//set new partOf on dependencies' side
@@ -3480,6 +3506,11 @@
 					}
 					
 					return this;
+				},
+				inCtxt : function( ctxt ) {
+					var v = Object.create( this );
+					v._context = ctxt;
+					return v;
 				},
 				"delete" : function() {
 					var id;
@@ -3698,17 +3729,8 @@
 						
 						ret = interpret.apply( react, arguments );
 						
-						if ( ret ) {
-							if ( ret._isVar ) {
-								if ( typeof ret._value === "function" )
-									ret = ret._value;
-								else
-									ret = ret.valueOf();
-							
-							} else if ( ret._isValArray ) {
-								ret = ret.valueOf();
-							}
-						}
+						if ( ret && ( ret._isVar || ret._isValArray ) )
+							ret = ret.valueOf();
 						
 						return ret;
 					};
