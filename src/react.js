@@ -256,23 +256,17 @@
 											continue;
 										
 										this._dep[ arg[ id ]._guid ] = arg[ id ];
-										
-										if ( arg[ id ]._isCtxtEval )
-											this._isCtxtEval = true;
 									}
 								
 								} else if ( arg && arg._isVar ) {
 									this._dep[ arg._guid ] = arg;
-									
-									if ( arg._isCtxtEval )
-										this._isCtxtEval = true;
 								}
 							}
 							
 							return this;
 						},
 						_checkDep = function( _dep ) {
-							var i, l, id1, id2, stayFuncVar;
+							var i, l, id1, id2;
 							
 							if ( _dep.constructor === Array ) {
 								_dep = _dep._dep;
@@ -285,17 +279,11 @@
 											for ( id1 in this[ i ]._dep ) {
 												if ( this[ i ]._dep[ id1 ] === _dep[ id2 ] )
 													continue DEPLOOP;
-												
-												if ( this[ i ]._dep[ id1 ]._isCtxtEval )
-													stayFuncVar = true;
 											}
 										
 										} else {
 											if ( this[ i ] === _dep[ id2 ] )
 												continue DEPLOOP;
-											
-											if ( this[ i ]._isCtxtEval )
-												stayFuncVar = true;
 										}
 									}
 									
@@ -309,26 +297,17 @@
 											if ( this[ i ]._dep[ id1 ] === _dep ) {
 												return;
 											}
-											
-											if ( this[ i ]._dep[ id1 ]._isCtxtEval )
-												stayFuncVar = true;
 										}
 									
 									} else {
 										if ( this[ i ] === _dep ) {
 											return;
 										}
-										
-										if ( this[ i ]._isCtxtEval )
-											stayFuncVar = true;
 									}
 								}
 								
 								delete this._dep[ _dep._guid ];
 							}
-							
-							if ( !stayFuncVar )
-								delete this._isCtxtEval
 						},
 						del = function() {
 							var ret = true;
@@ -3096,7 +3075,8 @@
 									}
 									
 									//put token into expression
-									if ( expr.o[ expr.p ] === undefined && token.id !== ")" && token.id !== "}" ) {
+									if ( expr.o[ expr.p ] === undefined && ( !expr.end || expr.end !== token.id ) ) {
+										//dont do this for ending tokens
 										expr = token.nud( expr );
 										
 										if ( expr.parent && expr.o[ expr.p ] ) {
@@ -3217,11 +3197,11 @@
 				valueOf : function() {
 					try {
 						var idx, context;
-						if ( arguments.length && !this._context ) {
+						if ( this._customContext || arguments.length ) {
 							context = [];
-							idx = arguments.length;
+							idx = ( this._customContext || arguments ).length;
 							while( idx-- )
-								context[ idx ] = arguments[ idx ].valueOf();
+								context[ idx ] = ( this._customContext || arguments )[ idx ].valueOf();
 							
 							if ( typeof this._value === "function" ) {
 								return this._value.apply( null, context );
@@ -3267,8 +3247,10 @@
 						if ( !("_string" in this) ) {
 							this._string = this._isNamed ? this._key + " = " : "";
 						
-							if ( this._value && this._value._isValArray )
+							if ( this._value && this._value.toString )
 								this._string += this._value.toString();
+							else if ( typeof this._value === "function" )
+								this._string += "function(){...}";
 							else
 								this._string += String( this._value );
 						}
@@ -3372,14 +3354,6 @@
 					delete this._evaled;
 					delete this._string;
 					
-					this._hasCtxtEval = false;
-					for ( var id in this._dep ) {
-						if ( this._dep[ id ]._hasCtxtEval ) {
-							this._hasCtxtEval = true;
-							break;
-						}
-					}
-					
 					for ( var id in this._partOf )
 						this._partOf[ id ]._invalidate();
 					
@@ -3466,11 +3440,10 @@
 							delete this._context;
 							this._invalidate();
 							
-						} if ( this._context !== val._context ) {
+						} else if ( this._context !== val._context ) {
 							this._context = val._context;
 							delete val._context;
 							
-							//invalidate
 							this._invalidate();
 						}
 						
@@ -3524,7 +3497,7 @@
 				},
 				inCtxt : function( ctxt ) {
 					var v = Object.create( this );
-					v._context = ctxt;
+					v._customContext = ctxt;
 					return v;
 				},
 				"delete" : function() {
@@ -3545,9 +3518,6 @@
 					delete this._evaled;
 					
 					delete this._isReactive;
-					delete this._isCtxtEval;
-					delete this._hasCtxtEval;
-					
 					delete this._guid
 					delete this._dep;
 					delete this._partOf;
@@ -3680,7 +3650,7 @@
 						
 						for ( var key in consts ) {
 							if ( consts.hasOwnProperty( key ) ) {
-								table[ key ] = Variable( key, consts[ key ].constructor === Array ? parseFunc.apply( this, consts[ key ] ) : consts[ key ] );
+								table[ key ] = Variable( key, consts[ key ] );
 								table[ key ]._locked = true;
 							}
 						}
@@ -3742,12 +3712,17 @@
 				var react = function() {
 						var ret;
 						
-						ret = interpret.apply( react, arguments );
+						ret = interpret.apply( props, arguments );
 						
 						if ( ret && ( ret._isVar || ret._isValArray || ret._isCtxtArray ) )
 							ret = ret.valueOf();
 						
 						return ret;
+					},
+					props = {
+						litTable  : setupLits( litTable, template && template.litTable ),
+						opTable   : setupOps( opTable, template && template.opTable ),
+						nameTable : setupVars( consts, template && template.nameTable, react )
 					};
 				
 				if ( template === "debugger" ) {
@@ -3762,10 +3737,10 @@
 								arguments = Array.prototype.slice.call( arguments, 1 );
 							}
 							
-							ret = interpret.apply( react, arguments );
+							ret = interpret.apply( props, arguments );
 							
 							if ( ret._isValArray )
-								ret = this.nameTable.set( null, ret );
+								ret = props.nameTable.set( null, ret );
 							
 							dontTrack = false;
 							
@@ -3777,18 +3752,16 @@
 							throw ( error );
 						}
 					}
+					
+					react.leak.nameTable = props.nameTable;
 				}
 				
-				react.litTable = setupLits( litTable, template && template.litTable );
-				react.opTable  = setupOps( opTable, template && template.opTable );
-				react.nameTable = setupVars( consts, template && template.nameTable, react );
-				
-				react.Interpreter   = Interpreter;
+				react.Interpreter = Interpreter;
 				
 				return react;
 			};
 		}() );
 	
 	//expose
-	react = Interpreter( null, "math" );
-}() );
+	this.react = Interpreter( null, "math" );
+}.call() );
