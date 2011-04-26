@@ -1,6 +1,6 @@
 /*
  * 
- * Copyright (c) 2011 Christopher Aue, http://reactjs.com
+ * Copyright (c) 2011 Christopher Aue
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -86,463 +86,32 @@
 			throw new Error( "react.js | " + msg );
 		};
 	
-	var ctxtVarCarrier = {
-			ctxtVarCarrier : true,
-			func : null
-		};
-	
-	var Datatype = ( function() {
-			var valueOf = function( ctxt, data ) {
-					try {
-						if ( this._isCtxtEval )
-							return this._valueOf( ctxt, data );
-						
-						if ( this._evaled === null )
-							this._evaled = this._valueOf();
-						
-						return this._evaled;
-					
-					} catch( e ) {
-						error( "react.datatype.valueOf: " + e.message );
-					}
-				},
-				toString = function( ctxt, data ) {
-					try {
-						if ( this._isCtxtEval )
-							return this._toString ? this._toString( ctxt, data ) : String( this.valueOf( ctxt, data ) );
-						
-						if ( this._string === null )
-							this._string = this._toString  ? this._toString() : String( this.valueOf() );
-						
-						return this._string;
-					
-					} catch( e ) {
-						error( "react.datatype.toString: " + e.message );
-					}
-				},
-				_valueOf = function() {
-					return undefined;
-				},
-				_toString = function( ctxt, data ) {
-					return String( this.valueOf( ctxt, data ) );
-				};
-			
-			return function( ini, proto ) {
-				var key, type, constr, dataProps = [], fixnew;
-				
-				//identify data properties reflecting the instances state
-				for ( key in proto ) {
-					type = typeof proto[ key ];
-					if ( proto[ key ] === null || ( type !== "object" && type !== "function" ) )
-						dataProps.push( key );
-				}
-				
-				constr = function() {
-					if ( fixnew && this instanceof constr )
-						return this;
-					
-					var ret = this;
-					
-					//instantiation without "new" operator
-					if ( !(this instanceof constr) ) {
-						fixnew = true;
-						ret = new constr;
-						fixnew = false;
-					}
-					
-					ini.apply( ret, arguments );
-					
-					//check, if instance needs to be reactive
-					for ( var idx = 0, len = dataProps.length; idx < len; idx++ ) {
-						var data = ret[ dataProps[ idx ] ];
-						
-						if ( data !== undefined && data._isReactive ) {
-							if ( !ret._isReactive )
-								reactive( ret );
-							
-							ret.addDep( data._key ? data : data._dep );
-						}				
-					}
-					
-					if ( ret._valueOf.length )
-						ret._isCtxtEval = true;
-					else
-						delete ret._isCtxtEval;
-					
-					return ret;
-				};
-				
-				constr.prototype = Object.create( proto );
-				
-				constr.prototype._valueOf   = proto.hasOwnProperty( "valueOf" )   ? proto.valueOf   : _valueOf;
-				constr.prototype._toString  = proto.hasOwnProperty( "toString" )  ? proto.toString  : _toString;
-				
-				proto = constr.prototype;
-				
-				proto.valueOf    = valueOf;
-				proto.toString   = toString;
-				
-				proto._evaled = null;
-				proto._string = null;
-				
-				return constr;
-			};
-		}() );
-	
-	var Reactive = function( val, noPartOf ) {
-			var r;
-			if ( this instanceof Reactive )
-				r = this;
-			else
-				r = Object.create( Reactive.prototype );
-			
-			r._guid	  = Reactive.prototype._guid++;
-			r._dep 	  = null;
-			r._partOf = {};
-			r._funcs  = [];
-			
-			r.set( val, noPartOf );
-			
-			return r;
-		};
-	
-	Reactive.prototype = {
-		valueOf : function( ctxt, data ) {
-			try {
-				if ( "_prev" in this )
-					return this._valueOf();
-				
-				if ( this._isCtxtEval )
-					return this._value.call( ctxt, data );
-				
-				if ( this._hasCtxtEval )
-					return this._valueOf( ctxt, data );
-				
-				if ( !("_evaled" in this) )
-					this._evaled = this._valueOf();
-				
-				return this._evaled;
-			
-			} catch( e ) {
-				error( "react.reactive.valueOf: " + e.message );
-			}
-		},
-		toString : function( ctxt, data ) {
-			try {
-				if ( this._isCtxtEval )
-					return String( this._value.apply( ctxt, data ) );
-				
-				if ( this._hasCtxtEval )
-					return this._toString  ? this._toString( ctxt, data ) : String( this.valueOf( ctxt, data ) );
-				
-				if ( !("_string" in this) )
-					this._string = this._toString  ? this._toString() : String( this.valueOf() );
-				
-				return this._string;
-			
-			} catch( e ) {
-				error( "react.reactive.toString: " + e.message );
-			}
-		},
-		_prevValueOf : function( ctxt, data ) {
-			return  "_prev" in this ? 
-					( this._prev && this._prev._prevValueOf ?
-						this._prev._prevValueOf( ctxt, data ) :
-						this._prev ) :
-					this._value && this._value._prevValueOf ?
-						this._value._prevValueOf( ctxt, data ) :
-						this._value;
-		},
-		
-		_bind : function( f, args, eval ) {
-			this._funcs.push( {
-				func : f,
-				args : args,
-				eval : eval
-			} );
-			
-			return this;
-		},
-		_unbind : function( f, args ) {
-			if ( arguments.length === 0 ) {
-				//unbind all functions, if no function is specified
-				this._funcs.length = 0;
-			}
-			
-			var fIdx = this._funcs.length,
-				call,
-				argIdx,
-				funcsEquiv,
-				argsEquiv;
-			
-			
-			while ( fIdx-- ) {
-				call = this._funcs[ fIdx ];
-				
-				//compare function and arguments
-				argIdx = args.length;
-				if ( equiv( call.func, f ) && equiv( call.args, args ) ) {
-					this._funcs.splice( fIdx, 1 )
-					return true;
-				}
-			}
-			
-			return false;
-		},
-		_trigger : function() {
-			var i = 0,
-				l = this._funcs.length,
-				call, func, ctxt,
-				j, m, args;
-			//debugger;
-			while ( i < l ) {
-				call = this._funcs[ i++ ];
-				args = call.args;
-				
-				if ( call.func._isValArray && call.func._propAccess ) {
-					var ctxt = call.func[ 1 ].valueOf(),
-						prop,
-						j = 2,
-						m = call.func.length-1;
-					
-					while ( j<m )
-						ctxt = ctxt[ call.func[ j++ ].valueOf() ];
-					
-					prop = call.func[ j ].valueOf();
-					
-					func = ctxt[ prop ];
-				
-				} else {
-					func = call.func._isValArray ? call.func.valueOf() : call.func._isVar ? call.func._value : call.func;
-				}
-				
-				if ( call.eval ) {
-					args = [];
-					j = call.args.length;
-					while ( j-- ) {
-						args[ j ] = call.args[ j ].valueOf();
-					}
-				}
-				
-				try {
-					func.apply( ctxt || this, args );
-				} catch( e ) {
-					error( "A reactive function call causes problems: " + e.message );
-				}
-			}
-			
-			return this;
-		},
-		_invalidate : function() {
-			delete this._evaled;
-			delete this._string;
-			
-			this._hasCtxtEval = false;
-			for ( var id in this._dep ) {
-				if ( this._dep[ id ]._hasCtxtEval ) {
-					this._hasCtxtEval = true;
-					break;
-				}
-			}
-			
-			for ( var id in this._partOf )
-				this._partOf[ id ]._invalidate();
-			
-			if ( this._funcs.length )
-				this._trigger();
-			
-			return this;
-		},
-		
-		/*addDep : function() {
-			var i, l = arguments.length, arg, id;
-			
-			if ( l && this._dep === null )
-				this._dep = { depObj:true };
-			
-			for ( i = 0; i < l; i++ ) {
-				arg = arguments[ i ];
-				
-				if ( !arg )
-					continue;
-				
-				if ( arg.depObj ) {
-					for ( id in arg ) {
-						if ( id === "depObj" )
-							continue;
-						
-						if ( arg[ id ] && arg[ id ]._isVar ) {
-							this._dep[ arg[ id ]._guid ] = arg[ id ];
-							arg[ id ]._partOf[ this._guid ] = this;
-							
-							if ( arg[ id ]._hasCtxtEval )
-								this._hasCtxtEval = true;
-						}
-					}
-				
-				} else if ( arg._isVar ) {
-					this._dep[ arg._guid ] = arg;
-					arg._partOf[ this._guid ] = this;
-					
-					if ( arg._hasCtxtEval )
-						this._hasCtxtEval = true;
-				}
-			}
-			
-			return this;
-		},*/
-		/*rmvDep : function() {
-			var i, l = arguments.length, arg, id;
-			
-			if ( this._dep === null )
-				return this;
-			
-			for ( i = 0; i < l; i++ ) {
-				arg = arguments[ i ];
-				
-				if ( !arg )
-					continue;
-				
-				if ( arg._isVar ) {
-					delete arg._partOf[ this._guid ];
-					delete this._dep[ arg._guid ];
-				}
-			}
-			
-			if ( !this._hasCtxtEval )
-				return this;
-			
-			//check, if object is still evaluating under context
-			for ( id in this._dep ) {
-				if ( this._dep[ id ]._hasCtxtEval )
-					return this;
-			}
-			
-			this._hasCtxtEval = false;
-			
-			return this;
-		},*/
-		
-		set : function( val, noPartOf ) {
-			var id;
-			
-			//save previous value temporarily, so invalidation has access to it, if necessary
-			this._prev = this._value;
-			
-			//set new value
-			this._value = val && val.ctxtVarCarrier ? val.func : val;
-			
-			//delete partOfs on dependencies side
-			for ( id in this._dep ) {
-				if ( id === "depObj" )
-					continue;
-				
-				if ( this._dep[ id ]._partOf )
-					delete this._dep[ id ]._partOf[ this._guid ];
-			}
-			
-			//set new dependency
-			if ( val )
-				this._dep = ( val && val._dep ) || null;
-			
-			//invalidate
-			this._invalidate();
-			
-			//delete previous value
-			delete this._prev;
-			
-			//identify context evaluation
-			this._isCtxtEval  = false;
-			this._hasCtxtEval = false;
-			if ( val && val.ctxtVarCarrier )
-				this._isCtxtEval = true;
-			else if ( val && ( val._isCtxtEval || val._hasCtxtEval ) )
-				this._hasCtxtEval = true;
-			
-			if ( !noPartOf ) {
-				//set new partOf on dependencies' side
-				for ( id in this._dep ) {
-					if ( id === "depObj" )
-						continue;
-					
-					this._dep[ id ]._partOf[ this._guid ] = this;
-				}
-			}
-			
-			return this;
-		},
-		"delete" : function() {
-			var id;
-			
-			//save previous value temporarily, so invalidation has access to it, if necessary
-			//this._prev = this._value;
-			
-			delete this._value;
-			
-			//invalidate
-			//this._invalidate();
-			
-			//delete previous value
-			//delete this._prev;
-			
-			//delete partOfs on dependencies side
-			for ( id in this._dep ) {
-				if ( id === "depObj" )
-					continue;
-				
-				if ( this._dep[ id ]._partOf )
-					delete this._dep[ id ]._partOf[ this._guid ];
-			}
-			
-			delete this._string;
-			delete this._evaled;
-			
-			delete this._isReactive;
-			delete this._isCtxtEval;
-			delete this._hasCtxtEval;
-			
-			delete this._guid
-			delete this._dep;
-			delete this._partOf;
-			this._funcs.length = 0;
-			delete this._funcs;
-			
-			return true;
-		},
-		
-		_value  : undefined,
-		
-		_isReactive  : true,
-		_isCtxtEval  : false,
-		_hasCtxtEval : false,
-		
-		_guid   : 0,
-		_dep    : null,
-		_partOf : null,
-		_funcs  : null
-	};
-	
 	var Interpreter = ( function() {
-			//streamlined pratt interpreter - derived from http://javascript.crockford.com/tdop/tdop.html
-			//expression evaluation directly included into the interpret process
+			//streamlined pratt parser - derived from http://javascript.crockford.com/tdop/tdop.html
+			//expression evaluation directly included into the parse process
 			
-			var noPartOf = false;
+			var dontTrack = false;
 			
 			//value array properties
 			var makeValArray = ( function() {
-					var valueOf = function( ctxt, data ) {
+					var valueOf = function() {
 							try {
 								var op = this[ 0 ],
-									len = this.length-1,
+									idx,
 									ret,
-									cur;
+									cur,
+									context;
 								
-								if ( this.length === 2 ) {
+								context = Array.prototype.slice.apply( this._context || arguments );
+								idx = context.length;
+								while( idx-- )
+									context[ idx ] = context[ idx ].valueOf();
+								
+								idx = this.length;
+								if ( idx === 2 ) {
 									//unary
-									if ( this[ 1 ]._isVar )
-										cur = this[ 1 ].valueOf( ctxt, data );
-									//else if ( typeof this[ 1 ] === "function" )
-									//	cur = this[ 1 ]( ctxt, data );
+									if ( this[ 1 ]._isVar || this[ 1 ]._isValArray || this[ idx ]._isCtxtArray )
+										cur = this[ 1 ].valueOf.apply( this[ 1 ], context );
 									else
 										cur = this[ 1 ];
 									
@@ -550,11 +119,9 @@
 								}
 								
 								//binary with two or more operands
-								for ( var idx = this.length-1; idx > 0; idx-- ) {
-									if ( this[ idx ]._isVar )
-										cur = this[ idx ].valueOf( ctxt, data );
-									//else if ( typeof this[ idx ] === "function" )
-									//	cur = this[ idx ]( ctxt, data );
+								while( idx--, idx > 0 ) {
+									if ( this[ idx ]._isVar || this[ idx ]._isValArray || this[ idx ]._isCtxtArray )
+										cur = this[ idx ].valueOf.apply( this[ idx ], context );
 									else
 										cur = this[ idx ];
 									
@@ -564,7 +131,7 @@
 								return ret;
 							
 							} catch( e ) {
-								error( "_isValArray.valueOf: " + e.message );
+								error( "valArray.valueOf: " + e.message );
 							}
 						},
 						toString = function() {
@@ -634,10 +201,10 @@
 								return str;
 							
 							} catch( e ) {
-								error( "_isValArray.toString:" + e.message );
+								error( "valArray.toString:" + e.message );
 							}
 						},
-						_prevValueOf = function( ctxt, data ) {
+						_prevValueOf = function() {
 							try {
 								var op = this[ 0 ],
 									len = this.length-1,
@@ -646,10 +213,8 @@
 								
 								if ( this.length === 2 ) {
 									//unary
-									if ( this[ 1 ]._isVar )
-										cur = this[ 1 ]._prevValueOf( ctxt, data );
-									//else if ( typeof this[ 1 ] === "function" )
-									//	cur = this[ 1 ]( ctxt, data );
+									if ( this[ 1 ]._isVar || this[ 1 ]._isValArray )
+										cur = this[ 1 ]._prevValueOf.apply( this[ 1 ], arguments );
 									else
 										cur = this[ 1 ];
 									
@@ -658,10 +223,8 @@
 								
 								//binary with two or more operands
 								for ( var idx = this.length-1; idx > 0; idx-- ) {
-									if ( this[ idx ]._isVar )
-										cur = this[ idx ]._prevValueOf( ctxt, data );
-									//else if ( typeof this[ idx ] === "function" )
-									//	cur = this[ idx ]( ctxt, data );
+									if ( this[ idx ]._isVar || this[ idx ]._isValArray  )
+										cur = this[ idx ]._prevValueOf.apply( this[ idx ], arguments );
 									else
 										cur = this[ idx ];
 									
@@ -671,7 +234,7 @@
 								return ret;
 							
 							} catch( e ) {
-								error( "_isValArray._prevValueOf: " + e.message );
+								error( "valArray._prevValueOf: " + e.message );
 							}
 						},
 						addDep = function() {
@@ -693,23 +256,17 @@
 											continue;
 										
 										this._dep[ arg[ id ]._guid ] = arg[ id ];
-										
-										if ( arg[ id ]._isCtxtEval )
-											this._isCtxtEval = true;
 									}
 								
 								} else if ( arg && arg._isVar ) {
 									this._dep[ arg._guid ] = arg;
-									
-									if ( arg._isCtxtEval )
-										this._isCtxtEval = true;
 								}
 							}
 							
 							return this;
 						},
 						_checkDep = function( _dep ) {
-							var i, l, id1, id2, stayFuncVar;
+							var i, l, id1, id2;
 							
 							if ( _dep.constructor === Array ) {
 								_dep = _dep._dep;
@@ -720,21 +277,13 @@
 									for ( i = 1, l = this.length; i < l; i++ ) {
 										if ( this[ i ] && this[ i ].constructor === Array ) {
 											for ( id1 in this[ i ]._dep ) {
-												if ( this[ i ]._dep[ id1 ] === _dep[ id2 ] ) {
+												if ( this[ i ]._dep[ id1 ] === _dep[ id2 ] )
 													continue DEPLOOP;
-												}
-												
-												if ( this[ i ]._dep[ id1 ]._isCtxtEval )
-													stayFuncVar = true;
 											}
 										
 										} else {
-											if ( this[ i ] === _dep[ id2 ] ) {
+											if ( this[ i ] === _dep[ id2 ] )
 												continue DEPLOOP;
-											}
-											
-											if ( this[ i ]._isCtxtEval )
-												stayFuncVar = true;
 										}
 									}
 									
@@ -748,26 +297,17 @@
 											if ( this[ i ]._dep[ id1 ] === _dep ) {
 												return;
 											}
-											
-											if ( this[ i ]._dep[ id1 ]._isCtxtEval )
-												stayFuncVar = true;
 										}
 									
 									} else {
 										if ( this[ i ] === _dep ) {
 											return;
 										}
-										
-										if ( this[ i ]._isCtxtEval )
-											stayFuncVar = true;
 									}
 								}
 								
 								delete this._dep[ _dep._guid ];
 							}
-							
-							if ( !stayFuncVar )
-								delete this._isCtxtEval
 						},
 						del = function() {
 							var ret = true;
@@ -786,6 +326,13 @@
 							delete this._checkDep;
 							delete this.addDep;
 							delete this.makeVar;
+							delete this.makeCtxtArray;
+						},
+						_inCtxt = function( ctxt ) {
+							delete this._isValArray;
+							this._isCtxtArray = true;
+							this._context = ctxt;
+							return this;
 						};
 					
 					return function( arr ) {
@@ -795,8 +342,10 @@
 						arr.toString     = toString;
 						arr._prevValueOf = _prevValueOf;
 						
-						arr._isValArray  = true;
 						arr.makeVar		 = makeVar;
+						arr._inCtxt       = _inCtxt;
+						
+						arr._isValArray  = true;
 						arr._dep		 = arr._dep || null;
 						arr._checkDep 	 = _checkDep;
 						arr.addDep		 = addDep;
@@ -1063,9 +612,10 @@
 			operator( ";" );
 			operator( ")" );		
 			operator( "]" );
+			operator( "}" );
 			
 			operator( "clean", "prefix", 0, null, function( undef, interpreter ) {
-				return interpreter.varTable.clean();
+				return interpreter.nameTable.clean();
 			} );
 			
 			operator( "cleanExcept", "prefix", 4, null, function( vars, interpreter ) {
@@ -1089,7 +639,7 @@
 					varObj[ vars._key ] = vars;
 				}
 				
-				return interpreter.varTable.clean( varObj );
+				return interpreter.nameTable.clean( varObj );
 			} );
 			
 			operator( ",", "infix", 5, null, ( function() {
@@ -1452,10 +1002,7 @@
 					return ctxtProp.ctxt[ ctxtProp.prop ] = val;
 				}
 				
-				if ( ( v._isVar && v === val ) || ( v.id === "(id)" && val && v.value === val._key ) )
-					return val;
-				
-				return interpreter.varTable.set( v._key || v.value, val );
+				return interpreter.nameTable.set( v._key || v.value, val );
 			} );
 			
 			operator( "(op=)", "infixr", 10, function( expr ) {
@@ -2657,8 +2204,7 @@
 				
 				if ( v._isValArray )
 					return v[ "delete" ]();
-				
-				return interpreter.varTable[ "delete" ]( v._key || v.value );
+				return interpreter.nameTable[ "delete" ]( v._key || v.value );
 			} );
 			
 			operator( "~delete", "delete", 90, null, function( path ) {
@@ -2670,7 +2216,7 @@
 				return revProps.set( ctxtProp.ctxt, ctxtProp.prop, reactPaths.set( path, undefined, true, true ) );
 			} );
 			
-			operator( "~", "prefix", 90, null, 	function( path ) {
+			operator( "~", "prefix", 90, null, function( path ) {
 				if ( !path || !path._propAccess )
 					error( "Bad lvalue: no reactive object property." );
 				
@@ -2691,26 +2237,60 @@
 				},
 				
 				ref : function( ref ) {
-					return ref.valueOf( interpret.ctxt, interpret.data );
+					return ref.valueOf();
 				},
 				
 				arr : function( arr ) {
-					return arr.valueOf( interpret.ctxt, interpret.data );
+					return arr.valueOf();
 				}
 			} );
 			
-			operator( "contextVariable", "prefix", 90, null, function( f ) {
-				if ( typeof f !== "function" )
-					error( "'contextVariable' has to be followed by a function!" );
-				
-				if ( this.prevToken !== "=" )
-					error( "'contextVariable' has to be preceded by an assignment!" );
-				
-				var ret = Object.create( ctxtVarCarrier );
-				ret.func = f;
-				
-				return ret;
-			} );
+			operator( "{", "infix", 100, function( expr ) {
+					this.first = expr.o[ expr.p ];
+					this.second = undefined;
+					this.ledEval = operators[ "{" ].ledEval;
+					expr.o[ expr.p ] = this;
+					
+					return {
+						o : this,
+						p : "second",
+						rbp : 0,
+						end : "}",
+						parent : expr,
+						prevToken : expr.o.id
+					};
+				},
+				function( v, ctxt ) {
+					var idx;
+					
+					if ( !v._isVar && !v._isValArray && typeof v !== "function" )
+						error( "{ must be preceeded by a function, variable or value array!" );
+					
+					if ( ctxt && ctxt._isValArray && ctxt[ 0 ] === "," ) {
+						ctxt = ctxt.slice( 1 );
+						
+						idx = ctxt.length;
+						while( idx-- ) {
+							if ( !ctxt[ idx ]._isVar )
+								error( "context data must be a variable!" );
+						}
+						
+					} else if ( ctxt !== undefined ) {
+						if ( !ctxt._isVar )
+							error( "context data must be a variable!" );
+						ctxt = [ ctxt ];
+					}
+					
+					if ( ctxt ) {
+						if ( typeof v === "function" )
+							v._context = ctxt;
+						else
+							v = v._inCtxt( ctxt );
+					}
+					
+					return v;
+				}
+			);
 			
 			var arrFunc = function( func, args ) {
 					if ( func.inverse ) {
@@ -2731,8 +2311,10 @@
 					argLits = [],
 					varInArgs = false,
 					argsArr,
-					tmp,
-					rea;
+					val,
+					rea,
+					key,
+					track = !dontTrack && !this.prevToken && !this.nextToken;
 				
 				//create arguments array to bind
 				if ( args && args._isValArray && args[ 0 ] === "," ) {
@@ -2746,75 +2328,103 @@
 						argsArr._dep = args._isValArray ? args._dep : args;
 				}
 				
-				//handle function part
+				//get function and context literal
 				if ( !func ) {
 					funcLit = func;
 				
 				} else if ( func._isValArray ) {
-					if ( !noPartOf )
-						for ( var key in func._dep ) {
-							if ( key === "depObj" )
-								continue;
-							
-							func._dep[ key ]._bind( func, argsArr, true );
-						}
+					funcLit = func.valueOf();
 					
 					if ( func._dep )
 						rea = makeValArray( [ "(", func ], func._dep );
 					
-					funcLit = func.valueOf();
-					
 					if ( func[ 0 ] === "." && func.length > 3 ) {
-						tmp = func[ func.length-1 ].pop();
+						val = func[ func.length-1 ].pop();
 						ctxtLit = func.valueOf();
-						func.push( tmp );
+						func.push( val );
 					
 					} else {
 						ctxtLit = func[ 1 ].valueOf();
 					}
 				
 				} else if ( func._isVar ) {
-					if ( !func._locked ) {
-						if ( !noPartOf )
-							func._bind( func, argsArr, true );
-						rea = makeValArray( [ "(", func ], func );
-					}
 					funcLit = func._value;
+					
+					if ( !func._locked )
+						rea = makeValArray( [ "(", func ], func );
 				
 				} else {
 					funcLit = func;
 				}
 				
-				//handle arguments part
+				//get argument literals
 				for ( var i = 0, l = argsArr.length; i<l; i++ ) {
 					if ( !argsArr[ i ] ) {
 						argLits.push( argsArr[ i ] );
 					
 					} else if ( argsArr[ i ]._isValArray ) {
-						for ( var key in argsArr[ i ]._dep ) {
+						for ( key in argsArr[ i ]._dep ) {
 							if ( key === "depObj" )
 								continue;
 							
-							if ( !noPartOf )
-								argsArr[ i ]._dep[ key ]._bind( func, argsArr, true );
-							
 							varInArgs = true;
+							break;
 						}
 						
 						argLits.push( argsArr[ i ].valueOf() );
 					
 					} else if ( argsArr[ i ]._isVar ) {
-						if ( !argsArr[ i ]._locked ) {
-							if ( !noPartOf )
-								argsArr[ i ]._bind( func, argsArr, true );
-							
+						if ( !argsArr[ i ]._locked )
 							varInArgs = true;
-						}
 						
 						argLits.push( argsArr[ i ].valueOf() );
 					
 					} else {
 						argLits.push( argsArr[ i ] );
+					}
+				}
+				
+				try {
+					val = funcLit.apply( ctxtLit, argLits );
+				} catch ( e ) {
+					error( "A reactive function call causes problems: " + e.message );
+				}
+				
+				//bind listening functions to reactive parts of this call
+				//if we want to track changes at all
+				//don't track, if:
+				// - tracking is explicitly turned of by dontTrack
+				// - the return value of this function is processed further (function is preceeded or followed by an operator)
+				// - the function acts as a constructor (only relevant, if the previous condition is not fulfilled)
+				if ( !dontTrack && !this.prevToken && !this.nextToken && !(val instanceof funcLit) ) {
+					if ( func ) {
+						if ( func._isValArray ) {
+							for ( key in func._dep ) {
+								if ( key === "depObj" )
+									continue;
+								
+								func._dep[ key ]._bind( func, argsArr, true );
+							}
+							
+						} else if ( func._isVar && !func._locked ) {
+							func._bind( func, argsArr, true );
+						}
+					}
+					
+					for ( var i = 0, l = argsArr.length; i<l; i++ ) {
+						if ( argsArr[ i ] ) {
+							if ( argsArr[ i ]._isValArray ) {
+								for ( key in argsArr[ i ]._dep ) {
+									if ( key === "depObj" )
+										continue;
+									
+									argsArr[ i ]._dep[ key ]._bind( func, argsArr, true );
+								}
+							
+							} else if ( argsArr[ i ]._isVar && !argsArr[ i ]._locked ) {
+								argsArr[ i ]._bind( func, argsArr, true );
+							}
+						}
 					}
 				}
 				
@@ -2823,13 +2433,7 @@
 				else if ( varInArgs )
 					rea = arrFunc( funcLit, args );
 				
-				try {
-					tmp = funcLit.apply( ctxtLit, argLits );
-				} catch ( e ) {
-					error( "A reactive function call causes problems: " + e.message );
-				}
-				
-				return rea || tmp;
+				return rea || val;
 			} );
 			
 			operator( ":(", "call", 100, null, function( func, args ) {
@@ -2853,7 +2457,7 @@
 				//handle function part
 				if ( func ) {
 					if ( func._isValArray ) {
-						if ( !noPartOf )
+						if ( !dontTrack )
 							for ( var key in func._dep ) {
 								if ( key === "depObj" )
 									continue;
@@ -2865,7 +2469,7 @@
 					
 					} else if ( func._isVar ) {
 						if ( !func._locked ) {
-							if ( !noPartOf )
+							if ( !dontTrack )
 								func._bind( func, argsArr, true );
 							
 							rea = makeValArray( [ "(", func ], func );
@@ -2881,7 +2485,7 @@
 								if ( key === "depObj" )
 									continue;
 								
-								if ( !noPartOf )
+								if ( !dontTrack )
 									argsArr[ i ]._dep[ key ]._bind( func, argsArr, true );
 								
 								varInArgs = true;
@@ -2889,7 +2493,7 @@
 						
 						} else if ( argsArr[ i ]._isVar ) {
 							if ( !argsArr[ i ]._locked ) {
-								if ( !noPartOf )
+								if ( !dontTrack )
 									argsArr[ i ]._bind( func, argsArr, true );
 								
 								varInArgs = true;
@@ -3062,25 +2666,7 @@
 				objPropEval
 			);
 			
-			operator( "{", "infix", 120, function( expr ) {
-					this.first = expr.o[ expr.p ];
-					this.second = undefined;
-					this.ledEval = operators[ "{" ].ledEval;
-					expr.o[ expr.p ] = this;
-					
-					return {
-						o : this,
-						p : "second",
-						rbp : 0,
-						end : "}",
-						parent : expr,
-						prevToken : expr.o.id
-					};
-				},
-				{}
-			);
-			
-			operator( "(", "prefix", 130, function( expr ) {
+			operator( "(", "prefix", 120, function( expr ) {
 					this.first = undefined;
 					this.nudEval = operators[ "(" ].nudEval;
 					expr.o[ expr.p ] = this;
@@ -3126,28 +2712,34 @@
 				endExpr = function( expr, token ) {
 					var parent = expr.parent;
 					
-					expr.nextToken = token.id;
+					//fix of assignTo for operator assignment with double assignment
+					if ( expr.o.assignment && !assignTo && expr.o.first )
+						assignTo = expr.o.first.id === "(id)" ? expr.o.first.value : expr.o.first._key;
+					
+					expr.nextToken = !token || !token.lbp ? undefined : token.id;
 					
 					//get variable objects
 					//Since variables cannot be deleted, while they are still referenced,
 					//the pointer to the object stays the same as long as needed.
 					if ( !expr.o.dotPropAccess && expr.o.second && expr.o.second.id === "(id)" ) {
-						if ( !( expr.o.second.value in this.varTable.table ) )
+						if ( !( expr.o.second.value in this.nameTable.table ) )
 							error( expr.o.second.value + " is not defined." );
 						
-						expr.o.second = this.varTable.table[ expr.o.second.value ];
+						expr.o.second = this.nameTable.table[ expr.o.second.value ];
 					}
 					
 					if ( !expr.o.assignment && ( expr.o.call || expr.o.id !== "(" ) && expr.o.first && expr.o.first.id === "(id)" ) {
-						if ( !( expr.o.first.value in this.varTable.table ) )
-							error( expr.o.first.value + " is not defined." );
-						
-						expr.o.first = this.varTable.table[ expr.o.first.value ];
+						if ( !( expr.o.first.value in this.nameTable.table ) ) {
+							if ( expr.o.id !== "{" || expr.nextToken !== "=" )
+								error( expr.o.first.value + " is not defined." );
+						} else {						
+							expr.o.first = this.nameTable.table[ expr.o.first.value ];
+						}
 					}
 					
 					//use the value of a variable in case of assigning to the same variable
-					if ( assignTo && !expr.o.assignment ) {
-						if ( expr.o.first._key === assignTo ) {
+					if ( assignTo ) {
+						if ( !expr.o.assignment && expr.o.first && expr.o.first._key === assignTo ) {
 							if ( expr.o.first._value._isValArray )
 								expr.o.first = makeValArray( expr.o.first._value.slice( 0 ), expr.o.first._value._dep );
 							else
@@ -3162,14 +2754,6 @@
 						}
 					}
 					
-					/*
-					if ( this.doesEval ) {				
-						expr.o.second = expr.o.second && expr.o.second.valueOf( interpret.ctxt, interpret.data );
-						
-						if ( !expr.o.assignment )
-							expr.o.first = expr.o.first && expr.o.first.valueOf( interpret.ctxt, interpret.data );
-					}
-					*/
 					//evaluate expression
 					parent.o[ parent.p ] = ( expr.o.nudEval || expr.o.ledEval ).call( expr, expr.o.first, expr.o.second, this );
 					
@@ -3185,10 +2769,10 @@
 							//FIXME: hack for prefix assignment
 							//not nice, but works
 							if ( !expr.parent.o.first && expr.parent.o.assignment ) {
-								assignTo = expr.o[ expr.p ].id === "(id)" ? expr.o[ expr.p ].value : expr.o[ expr.p ]._key;;
+								assignTo = expr.o[ expr.p ].id === "(id)" ? expr.o[ expr.p ].value : expr.o[ expr.p ]._key;
 								expr.parent.o.first = expr.o[ expr.p ];
 							} else if ( expr.parent.o.id === "(" && !expr.o.first && expr.o.assignment ) {
-								assignTo = expr.o[ expr.p ].id === "(id)" ? expr.o[ expr.p ].value : expr.o[ expr.p ]._key;;
+								assignTo = expr.o[ expr.p ].id === "(id)" ? expr.o[ expr.p ].value : expr.o[ expr.p ]._key;
 								expr.o.first = expr.o[ expr.p ];
 							}
 						}
@@ -3502,7 +3086,8 @@
 									}
 									
 									//put token into expression
-									if ( expr.o[ expr.p ] === undefined && token.id !== ")" ) {
+									if ( expr.o[ expr.p ] === undefined && ( !expr.end || expr.end !== token.id ) ) {
+										//dont do this for ending tokens
 										expr = token.nud( expr );
 										
 										if ( expr.parent && expr.o[ expr.p ] ) {
@@ -3560,6 +3145,8 @@
 									//extend expression
 									if ( expr.rbp < token.lbp )
 										expr = token.led( expr );
+									
+									token = undefined;
 								}
 							}
 						}
@@ -3570,39 +3157,29 @@
 						expr = endExpr.call( this, expr, token );
 					
 					//finetune return value
-					if ( interpret.returns ) {
-						if ( ret.value ) {
-							if ( ret.value.id === "(id)" ) {
-								if ( !( ret.value.value in this.varTable.table ) )
-									error( ret.value.value + " is not defined." );
-								
-								ret.value = this.varTable.table[ ret.value.value ];
-							}
+					if ( ret.value ) {
+						if ( ret.value.id === "(id)" ) {
+							if ( !( ret.value.value in this.nameTable.table ) )
+								error( ret.value.value + " is not defined." );
 							
-							if ( !interpret.retVars && ( ret.value._isValArray || ret.value._isVar ) )
-								return ret.value.valueOf( interpret.ctxt, interpret.data );
+							ret.value = this.nameTable.table[ ret.value.value ];
 						}
-					
-						//return top-level expression
-						return ret.value;
 					}
 					
-					return undefined;
+					//return top-level expression
+					return ret.value;
 				};
 			
-			//initializing interpreter
 			//Variable creation and properties
 			var Variable = function( key, val ) {
-					var v;
-					if ( this instanceof Variable )
-						v = this;
-					else
-						v = Object.create( Variable.prototype );
+					var v = this instanceof Variable ? this : Object.create( Variable.prototype );
 					
-					if ( val && val._isValArray )
-						val.makeVar();
+					v._guid	  = Variable.prototype._guid++;
+					v._dep 	  = null;
+					v._partOf = {};
+					v._funcs  = [];
 					
-					Reactive.call( v, val, noPartOf );
+					v.set( val );
 					
 					if ( key ) {
 						v._key = key;
@@ -3616,23 +3193,83 @@
 					return v;
 				};
 			
-			Variable.prototype = Object.create( Reactive.prototype );
-			
-			each( {
-				_valueOf : function( ctxt, data ) {
-					return  this._value && this._value.valueOf ?
-							this._value.valueOf( ctxt, data ) :
-							this._value;
+			Variable.prototype = {
+				_guid   : 0,
+				
+				_value  : undefined,
+				_dep    : null,
+				_partOf : null,
+				_funcs  : null,
+				
+				_isVar : true,
+				_context : null,
+				
+				valueOf : function() {
+					try {
+						var idx, context;
+						if ( this._customContext || arguments.length ) {
+							context = [];
+							idx = ( this._customContext || arguments ).length;
+							while( idx-- )
+								context[ idx ] = ( this._customContext || arguments )[ idx ].valueOf();
+							
+							if ( typeof this._value === "function" ) {
+								return this._value.apply( null, context );
+							
+							} else if ( this._value && this._value.valueOf )
+								return this._value.valueOf( context );
+							
+							else
+								return this._value;
+						}
+						
+						if ( !this.hasOwnProperty( "_evaled" ) ) {
+							if ( this._context ) {
+								if ( typeof this._value === "function" ) {
+									context = [];
+									idx = this._context.length;
+									while( idx-- )
+										context[ idx ] = this._context[ idx ].valueOf();
+									
+									this._evaled = this._value.apply( null, context );
+								
+								} else if ( this._value && this._value.valueOf )
+									this._evaled = this._value.valueOf.apply( this._value, this._context );
+								
+								else
+									this._evaled = this._value;
+							
+							} else if ( this._value && this._value.valueOf )
+								this._evaled = this._value.valueOf();
+							
+							else
+								this._evaled = this._value;
+						}
+						
+						return this._evaled;
+					
+					} catch( e ) {
+						error( "Variable.valueOf: " + e.message );
+					}
 				},
-				_toString : function() {
-					var str = this._isNamed ? this._key : "";
+				toString : function() {
+					try {
+						if ( !("_string" in this) ) {
+							this._string = this._isNamed ? this._key + " = " : "";
+						
+							if ( this._value && this._value.toString )
+								this._string += this._value.toString();
+							else if ( typeof this._value === "function" )
+								this._string += "function(){...}";
+							else
+								this._string += String( this._value );
+						}
+						
+						return this._string;
 					
-					if ( this._value && this._value._isValArray )
-						str += ( str ? " = " : "" ) + this._value.toString();
-					else
-						str += ( str ? " = " : "" ) + String( this._value );
-					
-					return str;
+					} catch( e ) {
+						error( "Variable.toString: " + e.message );
+					}
 				},
 				_prevValueOf : function( ctxt, data ) {
 					return  "_prev" in this ? 
@@ -3643,24 +3280,262 @@
 								this._value._prevValueOf( ctxt, data ) :
 								this._value;
 				},
-				_isVar : true
-			}, function( key, prop ) {
-				Variable.prototype[ key ] = prop;
-			} );
+				
+				_bind : function( f, args, eval ) {
+					this._funcs.push( {
+						func : f,
+						args : args,
+						eval : eval
+					} );
+					
+					return this;
+				},
+				_unbind : function( f, args ) {
+					if ( arguments.length === 0 ) {
+						//unbind all functions, if no function is specified
+						this._funcs.length = 0;
+					}
+					
+					var fIdx = this._funcs.length,
+						call,
+						argIdx,
+						funcsEquiv,
+						argsEquiv;
+					
+					
+					while ( fIdx-- ) {
+						call = this._funcs[ fIdx ];
+						
+						//compare function and arguments
+						argIdx = args.length;
+						if ( equiv( call.func, f ) && equiv( call.args, args ) ) {
+							this._funcs.splice( fIdx, 1 )
+							return true;
+						}
+					}
+					
+					return false;
+				},
+				_trigger : function() {
+					var i = 0,
+						l = this._funcs.length,
+						call, func, obj,
+						j, m, args;
+					
+					while ( i < l ) {
+						call = this._funcs[ i++ ];
+						args = call.args;
+						
+						if ( call.func._isValArray && call.func._propAccess ) {
+							var obj = call.func[ 1 ].valueOf(),
+								prop,
+								j = 2,
+								m = call.func.length-1;
+							
+							while ( j<m )
+								obj = obj[ call.func[ j++ ].valueOf() ];
+							
+							prop = call.func[ j ].valueOf();
+							
+							func = obj[ prop ];
+						
+						} else {
+							func = call.func._isValArray ? call.func.valueOf() : call.func._isVar ? call.func._value : call.func;
+						}
+						
+						if ( call.eval ) {
+							args = [];
+							j = call.args.length;
+							while ( j-- ) {
+								args[ j ] = call.args[ j ].valueOf();
+							}
+						}
+						
+						try {
+							func.apply( obj || this, args );
+						} catch( e ) {
+							error( "A reactive function call causes problems: " + e.message );
+						}
+					}
+					
+					return this;
+				},
+				_invalidate : function() {
+					delete this._evaled;
+					delete this._string;
+					
+					for ( var id in this._partOf )
+						this._partOf[ id ]._invalidate();
+					
+					if ( this._funcs.length )
+						this._trigger();
+					
+					return this;
+				},
+				
+				set : function( val ) {
+					var id;
+					
+					if ( val && this._value === val ) {
+						if ( !val.hasOwnProperty( "_context" ) ) {
+							this._unlinkCtxtDeps();
+							delete this._context;
+							this._invalidate();
+							
+						} else if ( this._context !== val._context ) {
+							this._unlinkCtxtDeps();
+							this._context = val._context;
+							this._linkCtxtDeps();
+							delete val._context;
+							
+							this._invalidate();
+						}
+						
+						return this;
+					}
+					
+					//save previous value temporarily, so invalidation has access to it, if necessary
+					this._prev = this._value;
+					
+					//set new value
+					this._value = val;
+					
+					//delete links from dependencies to this instance
+					this._unlinkDeps();
+					
+					if ( val ) {
+						//set new dependency
+						this._dep = ( val && val._dep ) || null;
+						
+						if ( val._isValArray )
+							val.makeVar();
+						
+						//set context
+						this._context = val._context;
+						delete val._context;
+					}
+					
+					//invalidate
+					this._invalidate();
+					
+					//delete previous value
+					delete this._prev;
+					
+					if ( !dontTrack )
+						//link dependencies to this instance
+						this._linkDeps();
+					
+					return this;
+				},
+				_linkDeps : function() {
+					//set partOf on dependencies' side
+					var id;
+					for ( id in this._dep ) {
+						if ( id === "depObj" )
+							continue;
+						
+						this._dep[ id ]._partOf[ this._guid ] = this;
+					}
+					
+					this._linkCtxtDeps();
+				},
+				_linkCtxtDeps : function( v ) {
+					//set partOf of context parts
+					var ctxt = this._customContext || this._context,
+						v = v || this,
+						idx;
+					
+					if ( ctxt ) {
+						idx = ctxt.length;
+						while ( idx-- )
+							ctxt[ idx ]._partOf[ v._guid ] = v;
+					}
+					
+					if ( v !== this || !this._value || !this._value._isValArray )
+						return;
+					
+					idx = this._value.length;
+					while ( idx-- ) {
+						if ( this._value[ idx ]._customContext || this._value[ idx ]._isCtxtArray )
+							this._linkCtxtDeps.call( this._value[ idx ], this );
+					}
+				},
+				_unlinkDeps : function() {
+					//delete partOf on dependencies' side
+					var id;
+					for ( id in this._dep ) {
+						if ( id === "depObj" )
+							continue;
+						
+						if ( this._dep[ id ]._partOf )
+							delete this._dep[ id ]._partOf[ this._guid ];
+					}
+					
+					this._unlinkCtxtDeps();
+				},
+				_unlinkCtxtDeps : function( v ) {
+					//delete partOf of context parts
+					var ctxt = this._customContext || this._context,
+						v = v || this,
+						idx;
+					
+					if ( ctxt ) {
+						idx = ctxt.length
+						while ( idx-- )
+							delete ctxt[ idx ]._partOf[ v._guid ];
+					}
+					
+					if ( v !== this || !this._value || !this._value._isValArray )
+						return;
+					
+					idx = this._value.length;
+					while ( idx-- ) {
+						if ( this._value[ idx ]._customContext || this._value[ idx ]._isCtxtArray )
+							this._unlinkCtxtDeps.call( this._value[ idx ], this );
+					}
+				},
+				_inCtxt : function( ctxt ) {
+					var v = Object.create( this );
+					
+					v._guid = Variable.prototype._guid++;
+					v._customContext = ctxt;
+					
+					return v;
+				},
+				"delete" : function() {
+					var id;
+					
+					this._unlinkDeps();
+					
+					delete this._value;
+					
+					delete this._string;
+					delete this._evaled;
+					
+					delete this._guid
+					delete this._dep;
+					delete this._partOf;
+					this._funcs.length = 0;
+					delete this._funcs;
+					
+					return true;
+				}
+			};
 			
-			var VarTable = function( base ) {
+			//name table of interpreter
+			var NameTable = function( base ) {
 					var t;
-					if ( this instanceof VarTable )
+					if ( this instanceof NameTable )
 						t = this;
 					else
-						t = Object.create( VarTable.prototype );
+						t = Object.create( NameTable.prototype );
 					
 					t.table = base;
 					
 					return t;
 				};
 			
-			VarTable.prototype = {
+			NameTable.prototype = {
 				table  : null,
 				clean : function( vars ) {
 					var ret = true,
@@ -3680,15 +3555,15 @@
 					
 					return del ? this.clean( vars ) : ret;
 				},
-				set : function( key, val ) {
+				set : function( key, val, ctxt ) {
 					if ( key in this.table ) {
 						if ( this.table[ key ]._locked )
 							error( "Bad lvalue: variable is immutable (constant)." );
 						
-						return this.table[ key ].set( val, noPartOf );
+						return this.table[ key ].set( val );
 					}
 					
-					var v = Variable( key, val );
+					var v = Variable( key, val, ctxt );
 					return this.table[ v._key ] = v;
 				},
 				"delete" : function( key ) {
@@ -3701,7 +3576,10 @@
 								error( "Cannot delete variable " + key + ". It is still used in: " + this.table[ key ]._partOf[ id ].toString() + "." );
 						
 						if ( this.table[ key ]._funcs.length )
-							error( "Cannot delete variable " + key + ". It is still used in: " + this.table[ key ]._funcs[ 0 ].args + "." );
+							error( "Cannot delete variable " + key + ". It is still used in: " + 
+								( this.table[ key ]._funcs[ 0 ].func._isVar ? this.table[ key ]._funcs[ 0 ].func._key : "function() {}" ) + 
+								"( " + this.table[ key ]._funcs[ 0 ].args + " )."
+							);
 						
 						var ret = this.table[ key ][ "delete" ]();
 						
@@ -3714,6 +3592,7 @@
 				}
 			};
 			
+			//initializing interpreter
 			var mathModule = ( function() {
 					var ret = {
 						pi		: Math.PI,
@@ -3765,13 +3644,13 @@
 						
 						for ( var key in consts ) {
 							if ( consts.hasOwnProperty( key ) ) {
-								table[ key ] = Variable( key, consts[ key ].constructor === Array ? parseFunc.apply( this, consts[ key ] ) : consts[ key ] );
+								table[ key ] = Variable( key, consts[ key ] );
 								table[ key ]._locked = true;
 							}
 						}
 					}
 					
-					return VarTable( Object.create( table ) );
+					return NameTable( Object.create( table ) );
 				},
 				setupOps = function( ops, base ) {
 					if ( !ops || !ops.length )
@@ -3827,22 +3706,18 @@
 				var react = function() {
 						var ret;
 						
-						interpret.returns = true;
-						interpret.retVars = false;
+						ret = interpret.apply( props, arguments );
 						
-						ret = interpret.apply( react, arguments );
-						
-						interpret.ctxt = window;
-						interpret.data = null;
+						if ( ret && ( ret._isVar || ret._isValArray || ret._isCtxtArray ) )
+							ret = ret.valueOf();
 						
 						return ret;
+					},
+					props = {
+						litTable  : setupLits( litTable, template && template.litTable ),
+						opTable   : setupOps( opTable, template && template.opTable ),
+						nameTable : setupVars( consts, template && template.nameTable, react )
 					};
-				
-				react.context = function( ctxt, data ) {
-					interpret.ctxt = ctxt;
-					interpret.data = data;
-					return react;
-				};
 				
 				if ( template === "debugger" ) {
 					delete template;
@@ -3852,50 +3727,35 @@
 							var ret;
 							
 							if ( arguments[ 0 ] === "no partOf" ) {
-								noPartOf = true;
+								dontTrack = true;
 								arguments = Array.prototype.slice.call( arguments, 1 );
 							}
-								
-							interpret.returns = true;
-							interpret.retVars = true;
 							
-							ret = interpret.apply( react, arguments );
+							ret = interpret.apply( props, arguments );
 							
 							if ( ret._isValArray )
-								ret = this.varTable.set( null, ret );
+								ret = props.nameTable.set( null, ret );
 							
-							interpret.ctxt = window;
-							interpret.data = null;
-							noPartOf = false;
+							dontTrack = false;
 							
 							return ret;
 						
 						} catch ( error ) {
-							interpret.ctxt = window;
-							interpret.data = null;
-							
-							noPartOf = false;
+							dontTrack = false;
 							
 							throw ( error );
 						}
 					}
+					
+					react.leak.nameTable = props.nameTable;
 				}
 				
-				react.litTable = setupLits( litTable, template && template.litTable );
-				react.opTable  = setupOps( opTable, template && template.opTable );
-				react.varTable = setupVars( consts, template && template.varTable, react );
-				
-				react.Datatype      = Datatype;
-				//react.Reactive      = Reactive;
-				react.Interpreter   = Interpreter;
-				
-				interpret.ctxt = window;
-				interpret.data = null;
+				react.Interpreter = Interpreter;
 				
 				return react;
 			};
 		}() );
 	
 	//expose
-	react = Interpreter( null, "math" );
-}() );
+	this.react = Interpreter( null, "math" );
+}.call() );

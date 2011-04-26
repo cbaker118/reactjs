@@ -67,95 +67,6 @@ var u = react.leak( "u = undefined" ),
 	foo  = react.leak( "foo = 'foo'" ),
 	bar  = react.leak( "bar = 'bar'" );
 
-//simple custom object
-var sObj = function( value ) {
-		if ( this instanceof sObj ) {
-			this.value = value;
-			return;
-		}
-		
-		return new sObj( value );
-	};
-	
-sObj.prototype = {
-	value : 0,
-	valueOf : function() {
-		return +this.value;
-	},
-	"prefix+" : function() {
-		return +this.value;
-	},
-	"infix+" : function( obj2 ) {
-		return this.value + ( ( obj2 && obj2.value ) || obj2 );
-	},
-	"infix*" : function( obj2 ) {
-		return this.value * ( ( obj2 && obj2.value ) || obj2 );
-	}
-};
-
-//custom datatype
-var defDatatype = react.Datatype(
-		function( data1, data2, data3 ) {
-		/*constructor*/
-			this.data1 = data1;
-			this.data2 = data2;
-			this.data3 = data3;
-		},
-		{
-			/*prototype*/
-			data1 : null,
-			data2 : null,
-			data3 : null
-		}
-	),
-	datatype = react.Datatype(
-		function( data1, data2, data3 ) {
-		/*constructor*/
-			this.data1 = data1;
-			this.data2 = data2;
-			this.data3 = data3;
-		},
-		{
-			/*prototype*/
-			data1 : null,
-			data2 : null,
-			data3 : null,
-			valueOf : function() {
-				return react.valueOf( this.data1 ) + react.valueOf( this.data2 ) + react.valueOf( this.data3 );
-			},
-			toString : function() {
-				return react.toString( this.data1 );
-			},
-			"infix+" : function( obj ) {
-				return Number( this ) + ( obj.toNumber ? obj.toNumber() : Number( obj ) );
-			}
-		}
-	),
-	ctxtDatatype = react.Datatype(
-		function( data1, data2, data3 ) {
-		/*constructor*/
-			this.data1 = data1;
-			this.data2 = data2;
-			this.data3 = data3;
-		},
-		{
-			/*prototype*/
-			data1 : null,
-			data2 : null,
-			data3 : null,
-			valueOf : function( ctxt, data ) {
-				var data1Val = react.valueOf( this.data1, ctxt, data ),
-					data2Val = react.valueOf( this.data2, ctxt, data ),
-					data3Val = react.valueOf( this.data3, ctxt, data );
-				
-				return ( ctxt ? "typeCtxt+" : "" ) + data1Val + data2Val + data3Val;
-			},
-			toString : function( ctxt, data ) {
-				return ( ctxt ? "typeCtxt+" : "" ) + react.toString( this.data1, ctxt, data );
-			}
-		}
-	);
-
 
 module( "General" );
 
@@ -810,6 +721,10 @@ test( "intern (re-)assignment of named variables", function() {
 	ok( react( "rea = 5" ), "react( \"rea = 5\" )" );
 	strictEqual( react.leak( "rea = -rea * 0.5" )._value, -2.5, "prefix calculation with self-reference: react( \"rea = -rea * 0.5\" )._value === -2.5" );
 	
+	ok( react( "rea = rea2 = 10" ), "react( \"rea = rea2 = 10\" )" );
+	strictEqual( react( "rea" ), 10, "react( \"rea\" )" );
+	strictEqual( react( "rea2" ), 10, "react( \"rea2\" )" );
+	
 	raises( function() { react( "'str' = 5" ) }, "react( \"'str' = 5\" ) -> exception" );
 	strictEqual( ( function() {
 		try {
@@ -828,7 +743,7 @@ test( "intern (re-)assignment of named variables", function() {
 		}
 	}() ), "react.js | Bad lvalue: variable is immutable (constant).", "react( \"pi = 5\" ) -> exception" );
 	
-	react( "delete", rea );
+	react( "delete rea; delete rea2" );
 } );
 
 test( "intern delete of named variables", function() {
@@ -1503,6 +1418,8 @@ test( "assignment", function() {
 			return e.message;
 		}
 	}() ), "react.js | a is not defined.", "react( \"z = a+10\" ) -> exception" );
+	
+	react( "delete z; delete z2; delete", anonym );
 } );
 
 test( "delete", function() {
@@ -1555,7 +1472,8 @@ test( "clean", function() {
 	ok( react( "~", obj, ".prop" ), "react( \"~\", obj, \".prop\" )" );
 	
 	ok( react( "clean" ), "react( \"clean\" )" );
-	ok( isEmptyObj( react.varTable.table, true ), "all variables deleted" );
+
+	ok( isEmptyObj( react.leak.nameTable.table, true ), "all variables deleted" );
 	
 	//restore deleted variables
 	u = react.leak( "u = undefined" );
@@ -1579,6 +1497,8 @@ test( "calculate with extern variables", function() {
 	
 	ok( equivArr( anonym2._value, [ "*", 5, anonym ] ), "calc with anonymous variable: react( anonym, \"*5\" )" );
 	ok( objContent( anonym2._dep, [ anonym ] ), "react.leak( anonym, \"*5\" )._dep" );
+	
+	react( "delete", anonym, "; delete", anonym2 );
 } );
 
 test( "operator assignments", function() {
@@ -1609,13 +1529,15 @@ test( "operator assignments", function() {
 	react.leak( "no partOf", "z ==.= 'bar'" );
 	ok( equivArr( z._value, [ "==", zVal, "bar" ] ), "operator assignment separator: react( \"z ==.= 'bar'\" )" );
 	ok( objContent( z._dep, [ x ] ), "react.leak( \"z ==.= 'bar'\" )._dep" );
+	
+	react( "delete z; delete", anonym );
 } );
 
 test( "evaluation before and after modifying a part", function() {
 	var r1 = react.leak( "r1 = x+t" )
 		xpt = x.valueOf() + t.valueOf();
 	
-	ok( r1, "r1 = react.leak( \"x+t\" )" );
+	ok( r1, "r1 = react.leak( \"r1 = x+t\" )" );
 	
 	strictEqual( r1._evaled, undefined, "r1._evaled before .valueOf()" );
 	strictEqual( r1._string, undefined, "r1._string before .toString()" );
@@ -1657,6 +1579,8 @@ test( "assigning object to variable", function() {
 	ok( rea, "rea = react.leak( \"rea = \", { foo : 'bar'} )" );
 	strictEqual( rea._value, obj, "rea._value after assignment" );
 	strictEqual( rea.valueOf(), obj, "rea.valueOf() after assignment" );
+	
+	react( "delete rea" );
 } );
 
 test( "property access: object is literal, property is variable", function() {
@@ -1678,6 +1602,8 @@ test( "property access: object is literal, property is variable", function() {
 	
 	ok( equivArr( react.leak( "no partOf", sObj, "[ ", sObj, "[ foo ].bar ]" )._value, [ ".", sObj, [ ".", sObj, foo, "bar" ] ] ), "1st propname also uses property access: react( sObj, \"[ \", sObj, \"[ foo ].bar ]\" )" );
 	ok( objContent( react.leak( "no partOf", sObj, "[ ", sObj, "[ foo ].bar ]" )._dep, [ foo ] ), "react( sObj, \"[ \", sObj, \"[ foo ].bar ]\" )" );
+	
+	react( "cleanExcept u, n, t, f, x, y, foo, bar, zero, one" );
 } );
 
 test( "property access: object is variable, property is literal", function() {	
@@ -1703,7 +1629,7 @@ test( "property access: object is variable, property is literal", function() {
 	ok( equivArr( react.leak( "no partOf", "obj[ obj[ foo ].bar ]" )._value, [ ".", obj, [ ".", obj, foo, "bar" ] ] ), "1st propname also uses property access: react( \"obj[ obj[ foo ].bar ]\" )" );
 	ok( objContent( react.leak( "no partOf", "obj[ obj[ foo ].bar ]" )._dep, [ obj, foo ] ), "react( \"obj[ obj[ foo ].bar ]\" )._dep" );
 	
-	react( "delete obj" );
+	react( "cleanExcept u, n, t, f, x, y, foo, bar, zero, one" );
 } );
 
 test( "permanent property assignment: object literal, property variable", function() {
@@ -2181,6 +2107,8 @@ test( "assigning function to variable", function() {
 	ok( fac, "fac = react.leak( \"fac = \", function( x ) { return x < 2 ? 1 : fac( x-1 )*x; } )" );
 	strictEqual( fac._value, func, "fac._value after assignment" );
 	strictEqual( fac.valueOf(), func, "fac.valueOf() after assignment" );
+	
+	react( "delete fac" );
 } );
 
 test( "call w/o return value: function is variable, argument is literal", function() {
@@ -2192,14 +2120,17 @@ test( "call w/o return value: function is variable, argument is literal", functi
 			foo = arg + 50;
 		},
 		func = react.leak( "func = ", func1 ),
-		call = react.leak( "func( 100 )" );
+		call;
 	
 	ok( func1, "func1 = function( arg ) { foo = arg; }" );
 	ok( func2, "func2 = function( arg ) { foo = arg + 50; }" );
 	ok( func, "react( \"func = \", func1 )" );
 	
+	strictEqual( func._funcs.length, 0, "func._funcs.length" );
+	call = react.leak( "func( 100 )" );
 	ok( equivArr( call._value, [ "(", func, 100 ] ), "react( func, \"( 100 )\" )" )
 	ok( objContent( call._dep, [ func ] ), "react.leak( func, \"( 100 )\" )._dep" );
+	strictEqual( func._funcs.length, 1, "func._funcs.length" );
 	
 	strictEqual( foo, 100, "foo" );
 	
@@ -2208,10 +2139,13 @@ test( "call w/o return value: function is variable, argument is literal", functi
 	strictEqual( foo, 150, "foo" );
 	
 	ok( react( "func~( 100 )" ), "react( \"func~( 100 )\" )" );
+	strictEqual( func._funcs.length, 0, "func._funcs.length" );
 	
 	ok( react( "func = ", func1 ), "react( \"func = \", func1 )" );
 	
 	strictEqual( foo, 150, "foo" );
+	
+	react( "delete", call, "; delete func" );
 } );
 
 test( "call w/o return value: function is valueArray, argument is literal", function() {
@@ -2442,409 +2376,322 @@ test( "registering :() and deregistering ~() call", function() {
 	
 	ok( r1._funcs.length === 0, "All r1 has been unregistered from all functions." );
 	
-	react( "delete r1" );
+	react( "delete", r1 );
+} );
+
+test( "call w/ return value: return value used, but not in an assignment", function() {
+	var sqrFunc = function( x ) { return x.valueOf()*x.valueOf() },
+		sqr = react.leak( "sqr = ", sqrFunc );
+	
+	ok( sqrFunc, "sqrFunc = function( x ) { return x.valueOf()*x.valueOf() }" );
+	ok( sqr, "react( \"sqr = \", sqrFunc );" );
+	
+	strictEqual( react( "sqr( x ) + sqr( 10 );" ), 100 + x.valueOf()*x.valueOf(), "react( \"sqr( x ) + sqr( 10 );\" )" );
+	strictEqual( sqr._funcs.length, 0, "sqr._funcs.length" );
+	
+	strictEqual( react( "sqr( x ); sqr( 10 )" ), 100, "react( \"sqr( x ); sqr( 10 )\" )" );
+	strictEqual( sqr._funcs.length, 2, "sqr._funcs.length" );
+	
+	react( "sqr~( x ); sqr~( 10 )" );
+	react( "delete sqr" );
 } );
 
 test( "call w/ return value: return value stored in a variable", function() {
 	var sqrFunc = function( x ) { return x.valueOf()*x.valueOf() },
-		rea = react.leak( "rea = 0" ),
-		sqr = react.leak( "sqr = ", sqrFunc );
+		sqr = react.leak( "sqr = ", sqrFunc ),
+		rea = react.leak( "rea = 0" );
 	
 	ok( sqrFunc, "sqrFunc = function( x ) { return x.valueOf()*x.valueOf() }" );
 	ok( sqr, "react( \"sqr = \", sqrFunc );" );
 	
 	ok( equivArr( react.leak( "rea = ", sqrFunc, "( x )" )._value, [ "(", sqrFunc, x ] ), "react( \"rea = \", sqrFunc, \"( x )\" )" );
 	ok( objContent( rea._dep, [ x ] ), "react.leak( \"rea = \", sqrFunc, \"( x )\" )._dep" );
+	strictEqual( react( "rea" ), x.valueOf()*x.valueOf(), "react( \"rea\" )" );
 	
 	ok( equivArr( react.leak( "rea = sqr(", 10, ")" )._value, [ "(", sqr, 10 ] ), "react( \"rea = sqr(\", 10, \")\" )" );
 	ok( objContent( rea._dep, [ sqr ] ), "react.leak( \"rea = sqr(\", 10, \")\" )._dep" );
+	strictEqual( react( "rea" ), 100, "react( \"rea\" )" );
 	
 	ok( equivArr( react.leak( "rea = sqr( x )" )._value, [ "(", sqr, x ] ), "react( \"rea = sqr( x )\" )" );
 	ok( objContent( rea._dep, [ sqr, x ] ), "react.leak( \"rea = sqr( x )\" )._dep" );
+	strictEqual( react( "rea" ), x.valueOf()*x.valueOf(), "react( \"rea\" )" );
 	
-	react( "delete rea" );
+	ok( equivArr( react.leak( "rea += sqr(", 10, ")" )._value, [ "+", [ "(", sqr, x ], [ "(", sqr, 10 ] ] ), "react( \"rea += sqr(\", 10, \")\" )" );
+	ok( objContent( rea._dep, [ sqr, x ] ), "react.leak( \"rea = sqr(\", 10, \")\" )._dep" );
+	strictEqual( react( "rea" ), 100 + x.valueOf()*x.valueOf(), "react( \"rea\" )" );
+	
+	react( "delete rea; delete sqr;" );
+} );
+
+
+module( "Objecthandling" );
+
+test( "operator overloading", function() {
+	var noPrefNoValOfObj = {
+			value : 5
+		},
+		noPrefValOfObj = {
+			value : 100,
+			valueOf : function() {
+				return this.value;
+			}
+		},
+		prefNoValOfObj = {
+			value : 200,
+			"prefix+" : function() {
+				return this.value;
+			}
+		},
+		prefValOfObj = {
+			value : 200,
+			"prefix+" : function() {
+				return this.value * 10;
+			},
+			valueOf : function() {
+				return this.value;
+			}
+		},
+		opObj = {
+			value : 6,
+			"prefix+" : function() {
+				return +this.value;
+			},
+			"infix+" : function( obj2 ) {
+				return this.value + ( ( obj2 && obj2.value ) || obj2 );
+			},
+			"infix*" : function( obj2 ) {
+				return this.value * ( ( obj2 && obj2.value ) || obj2 );
+			},
+			"infix=" : function( val ) {
+				return this.value = val;
+			}
+		};
+		
+	ok( noPrefNoValOfObj, "noValOfObj = { " +
+			"value : \"5\"" +
+		" };" );
+	
+	ok( noPrefValOfObj, "valOfObj = { " +
+			"value : 100, " +
+			"valueOf : function() {" +
+				" return this.value; " +
+			"}" +
+		" };" );
+	
+	ok( prefNoValOfObj, "valOfObj = { " +
+			"value : 200, " +
+			"\"prefix+\" : function() {" +
+				" return this.value; " +
+			"}" +
+		" };" );
+	
+	ok( prefValOfObj, "valOfObj = { " +
+			"value : 200, " +
+			"\"prefix+\" : function() {" +
+				" return this.value * 10; " +
+			"}, " +
+			"valueOf : function() {" +
+				" return this.value; " +
+			"}" +
+		" };" );
+	
+	ok( opObj, "opObj = { " +
+			"value : 6, " +
+			"\"prefix+\" : function() {" +
+				" return +this.value; " +
+			"}, " +
+			"\"infix+\" : function( obj2 ) {" + 
+				" return this.value + (\"value\" in obj2 ? obj2.value : obj2); " +
+			"}, " + 
+			"\"infix*\" : function( obj2 ) {" +
+				" return this.value * ( ( obj2 && obj2.value ) || obj2 ); " +
+			"}, " +
+			"\"infix=\" : function( val ) {" + 
+				" return this.value = val; " +
+			"}" +
+		" };" );
+	
+	//evaluation
+	ok( isNaN( react( "+", noPrefNoValOfObj ) ), ".valueOf() and \"prefix+\" not defined: isNaN( react( \"+\", noPrefNoValOfObj ) )" );
+	strictEqual( react( "+", noPrefValOfObj ), 100, ".valueOf() defined, \"prefix+\" not defined: react( \"+\", noPrefvalOfObj )" );
+	strictEqual( react( "+", prefNoValOfObj ), 200, ".valueOf() not defined, \"prefix+\" defined: react( \"+\", prefNoValOfObj )" );
+	strictEqual( react( "+", prefValOfObj ), 2000,  ".valueOf() and \"prefix+\" (prefered) defined: react( \"+\", prefValOfObj )" );
+	
+	//operator overloading
+	strictEqual( react( opObj, "+", noPrefNoValOfObj ), 11, "overloaded, stand-alone infix operator, known to left: react( opObj, \"+\", noPrefNoValOfObj )" );
+	strictEqual( react( noPrefNoValOfObj, "+", opObj ), 11, "overloaded, stand-alone infix operator, known to right: react( noPrefNoValOfObj, \"+\", opObj )" );
+	ok( isNaN( react( opObj, "^", opObj ) ), "overloaded, stand-alone infix operator, not known to both objects: isNaN( react( opObj, \"^\", opObj ) )" );
+	strictEqual( react( "+", opObj ), 6, "overloaded, stand-alone prefix operator: react( \"+\", opObj )" );
+	
+	strictEqual( react( opObj, "-5" ), 1,  "not overloaded, composed infix operator w\\ needed operator: react( opObj, \"-5\" )" );
+	strictEqual( react( "-", opObj ), -6,  "not overloaded, composed prefix operator w\\ needed operator: react( \"-\", obj1 )" );
+	
+	//overloaded composed operators needs no testing
+	
+	//operator assignment
+	strictEqual( react( opObj, "+=", 100 ), 106, "operator-assignment: react( opObj, \"+=\", 100 )" );
+} );
+
+test( "custom datatype", function() {
+	//example custom datatype
+	var Type = function( input ) {
+		//react() cannot explicitly call a function as constructor. Therefore, to use 
+		//constuctors in react(), they must be able to be called as simple functions, but
+		//act as constructors.
+		if ( !(this instanceof Type) )
+			return new Type( input );
+		
+		this.value = input;
+	};
+	
+	Type.prototype = {
+		value : null
+	};
+	
+	strictEqual( react( Type, "( 1235813 )" ).value, 1235813, "non-reactive instance: react( Type, \"( 1235813 )\" )" );
+	
+	ok( react( "Type = ", Type ), "react( \"Type = \", Type )" );
+	
+	strictEqual( react( "Type( 1235813 )" ).value, 1235813, "reactive (on function side) instance: react( \"Type( 1235813 )\" )" );
+	strictEqual( react.leak( "Type" )._funcs.length, 0, "react.leak( \"Type\" )._funcs.length" );
+	
+	strictEqual( react( Type, "( x )" ).value, x.valueOf(), "reactive (on argument side) instance: react( Type, \"( x )\" )" );
+	strictEqual( x._funcs.length, 0, "x._funcs.length" );
+	
+	strictEqual( react( "inst = ", Type, "( x+2 )" ).value, x.valueOf()+2, "reactive instance: react( \"inst = \", Type, \"( x+2 )\" ).value" );
+	strictEqual( react( "inst2 = Type( inst )" ).value, react( "inst" ), "reactive, depending instances: react( \"inst2 = Type( inst )\" ).value" );
+	strictEqual( react.leak( "Type" )._funcs.length, 0, "react.leak( \"Type\" )._funcs.length" );
+	ok( react( "x += 1" ), "react( \"x += 1\" )" );
+	strictEqual( react( "inst" ).value, x.valueOf()+2, "automatic update of reactive instance: react( \"inst\" ).value" );
+	strictEqual( react( "inst2" ).value, react( "inst" ), "automatic update of depending reactive instance: react( \"inst2\" ).value" );
+	
+	react( "delete inst2; delete inst; delete Type;" );
 } );
 
 
 module( "Context sensitive variables" );
 
-test( "simple function variable", function() {
-	react( "ctxtVar = contextVariable", function( data ) {
-			return ( this !== window ? "ctxt" : "" ) + ( data ? "data" : "" );
-		} );
+test( "simple context variables with default context", function() {
+	react( "ctxtVar = ", function( data ) {
+		return ( "0" in arguments ? data : "" );
+	}, "{ t }" );
 	
-	ok( true, "context variable: react( \"ctxtVar = contextVariable\", function( data ) { return ( this !== window ? \"ctxt\" : \"\" ) + ( data ? \"data\" : \"\" ) } )" );
+	ok( true, "context variable with default context t: react( \"ctxtVar = \", function( data ) { return ( data ? \"data\" : \"\" ) }, \"{ t }\" )" );
+	strictEqual( react( "ctxtVar" ), true, "evaluation in default context: react( \"ctxtVar\" )" );
+	strictEqual( react( "ctxtVar{ x }" ), x.valueOf(), "evaluation in custom context: react( \"ctxtVar{ x }\" )" );
+	strictEqual( react( "ctxtVar" ), true, "no change of evaluation in default context: react( \"ctxtVar\" )" );
+	strictEqual( react( "ctxtVar = ctxtVar{ f }" ), false, "change of context: react( \"ctxtVar = ctxtVar{ f }\" )" );
 	
-	strictEqual( react( "#ctxtVar" ), "", "react( \"#ctxtVar\" ) === \"\"" );
-	strictEqual( react.context()( "#ctxtVar" ), "", "react.context()( \"#ctxtVar\" ) === \"\"" );
-	strictEqual( react.context( {} )( "#ctxtVar" ), "ctxt", "react.context( {} )( \"#ctxtVar\" ) === \"ctxt\"" );
-	strictEqual( react.context( {}, true )( "#ctxtVar" ), "ctxtdata", "react.context( {}, true )( \"#ctxtVar\" ) === \"ctxtdata\"" );
-	strictEqual( react.context( null, true )( "#ctxtVar" ), "data", "react.context( null, true )( \"#ctxtVar\" ) === \"data\"" );
+	react( "delete ctxtVar" );
 } );
 
-test( "variable with value compound of literal and function variable", function() {
-	react( "ctxtVar = contextVariable", function( data ) {
-			return ( this !== window ? "ctxt" : "" ) + ( data ? "data" : "" );
-		} ),
-		rea = react.leak( "rea = 'r_'+ctxtVar" );
+test( "simple context variables without default context", function() {
+	var func = function( data ) {
+			return ( "0" in arguments ? data : "on context" );
+		},
+		ctxtVar;
 	
-	ok( true, "context variable: react( \"ctxtVar = contextVariable\", function( data ) { return ( this !== window ? \"ctxt\" : \"\" ) + ( data ? \"data\" : \"\" ) } )" );
-	ok ( rea, "var depending on a func var: rea = react.leak( \"rea = 'r_'+ctxtVar\" )" );
+	ok( ctxtVar = react.leak( "ctxtVar = ", func, "{ t }" ), "context variable with default context: react( \"ctxtVar = \", function( data ) { return ( data ? \"data\" : \"\" ) }, \"{ t }\" )" );
+	ok( ctxtVar._context[ 0 ] === t, "context of ctxtVar set to t" );
+	ok( react( "ctxtVar = ", func ), "context variable without default context: react( \"ctxtVar = \", function( data ) { return ( data ? \"data\" : \"\" ) } )" );
+	ok( ctxtVar._context === null, "context of ctxtVar reset to null" );
 	
-	strictEqual( react( "#rea" ), "r_", "react( \"#rea\" ) === \"r_\"" );
-	strictEqual( react.context()( "#rea" ), "r_", "react.context()( \"#rea\" ) === \"r_\"" );
-	strictEqual( react.context( {} )( "#rea" ), "r_ctxt", "react.context( {} )( \"#rea\" ) === \"r_ctxt\"" );
-	strictEqual( react.context( {}, true )( "#rea" ), "r_ctxtdata", "react.context( {}, true )( \"#rea\" ) === \"r_ctxtdata\"" );
-	strictEqual( react.context( null, true )( "#rea" ), "r_data", "react.context( null, true )( \"#rea\" ) === \"r_data\"" );
+	strictEqual( react( "ctxtVar" ), func, "variable acts as normal function: react( \"ctxtVar\" )" );
+	strictEqual( react( "ctxtVar{ x }" ), x.valueOf(), "evaluation in custom context: react( \"ctxtVar{ x }\" )" );
+	strictEqual( react( "ctxtVar" ), func, "variable still acts as normal function: react( \"ctxtVar\" )" );
+	strictEqual( react( "ctxtVar = ctxtVar{ f }" ), false, "change of context: react( \"ctxtVar = ctxtVar{ f }\" )" );
+	strictEqual( react( "ctxtVar = ctxtVar{}" ), func, "remove default context: react( \"ctxtVar = ctxtVar{}\" )" );
 	
-	ok( react( "rea -= ctxtVar" ), "react( \"rea -= ctxtVar\" )" );
-	strictEqual( rea._ctxtEval, undefined, "rea is no longer a function variable." );
+	react( "delete ctxtVar" );
 } );
 
-
-module( "Where to put operator overloading?" );
-
-test( "operator overloading for objects", function() {
-	var obj1 = sObj( "10" ),
-		obj2 = sObj( 5 );
+test( "complex context variable with simple context variable without default context", function() {
+	var func = function( data ) {
+			return ( "0" in arguments ? data : "noCtxt" );
+		};
 	
-	ok( obj1, "obj1 = sObj( \"10\" )" );
-	ok( obj2, "obj2 = sObj( 5 )" );
+	ok( react( "ctxtVar = ", func ), "context variable without default context: react( \"ctxtVar = \", function( data ) { return ( data ? \"data\" : \"\" ) } )" );
 	
-	strictEqual( react( +obj1, "+", obj2 ), 15, "overloaded, stand-alone infix operator: react( obj1, \"+\", obj2 )" );
-	strictEqual( react( +obj1, "*", obj2 ), 50, "overloaded, stand-alone infix operator: react( obj1, \"*\", obj2 )" );
-	strictEqual( react( "+", obj1 ), 10, "overloaded, stand-alone prefix operator: react( \"+\", obj1 )" );
+	ok( isNaN( react( "ctxtVar * 1" ) ), "ctxtVar is treated as function because of no context" );
 	
-	strictEqual( react( +obj1, "-", obj2 ), 5,  "not overloaded, composed infix operator w\\ needed operator: react( obj1, \"-\", obj2 )" );
-	strictEqual( react( "-", obj1 ), -10,  "not overloaded, composed prefix operator w\\ needed operator: react( \"-\", obj1 )" );
+	strictEqual( react( "(ctxtVar + ' to the max!'){ f }" ), "false to the max!", "context has to propagate down: react( \"(ctxtVar + ' to the max!'){ f }\" )" );
+	strictEqual( react( "(ctxtVar{ foo } + ' to the max!'){ f }" ), "foo to the max!", "context is custom: react( \"(ctxtVar{ foo } + ' to the max!'){ f }\" )" );
+	strictEqual( react( "ctxtVar + (ctxtVar + ' to the max!'){ f }" ), String( func ) + "false to the max!", "separated context array: react( \"ctxtVar + (ctxtVar + ' to the max!'){ f }\" )" );
 	
-	//overloaded, composed needs no testing
+	ok( react( "cmplCtxtVar = (ctxtVar + ' to the max!'){ f }" ), "context set for complex var, but not for parts: react( \"cmplCtxtVar = (ctxtVar + ' to the max!'){ f }\" )" );
+	strictEqual( react( "cmplCtxtVar" ), "false to the max!", "complex var in default context: react( \"cmplCtxtVar\" )" );
+	strictEqual( react( "cmplCtxtVar{ t }" ), "true to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
+	
+	ok( react( "cmplCtxtVar = (ctxtVar{ foo } + ' to the max!'){ f }" ), "context set for complex var and for parts: react( \"cmplCtxtVar = (ctxtVar{ foo } + ' to the max!'){ f }\" )" );
+	strictEqual( react( "cmplCtxtVar" ), "foo to the max!", "complex var in default context: react( \"cmplCtxtVar\" )" );
+	strictEqual( react( "cmplCtxtVar{ t }" ), "foo to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
+	
+	ok( react( "cmplCtxtVar = ctxtVar + (ctxtVar + ' to the max!'){ f }" ), "context set and not set for parts: react( \"cmplCtxtVar = ctxtVar + (ctxtVar + ' to the max!'){ f }\" )" );
+	strictEqual( react( "cmplCtxtVar" ), String( func ) + "false to the max!", "complex var in default context: react( \"cmplCtxtVar\" )" );
+	strictEqual( react( "cmplCtxtVar{ t }" ), "truefalse to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
+	
+	react( "delete cmplCtxtVar; delete ctxtVar;" );
 } );
 
-/*
-module( "react.eval" );
-
-test( "evaluation without context", function() {
-	var rct = react.leak( "no partOf", "x+t" ),
-		ctxtVar  = react.leak( "ctxtVar = ", function( ctxt, data ) {
-			return ctxt && data ? "ctxt+data" : ctxt ? "ctxt" : data ? "data" : "noCtxt";
-		} ),
-		evl = react.eval( "x+t" );
+test( "complex context variable with simple context variable with default context", function() {
+	var func = function( data ) {
+			return ( "0" in arguments ? data : "noCtxt" );
+		};
 	
-	ok( rct, "rct = react.leak( \"x+t\" )" );
-	ok( ctxtVar, "func var: ctxtVar = react.leak( \"ctxtVar = \", function( ctxt, data ) { return ctxt && data ? \"ctxt+data\" : ctxt ? \"ctxt\" : data ? \"data\" : \"noCtxt\"; } )" );
-	ok( evl !== undefined, "evl = react.eval( \"x+t\" )" );
+	ok( react( "ctxtVar = ", func, "{ t }" ), "context variable with default context: react( \"ctxtVar = \", function( data ) { return ( data ? \"data\" : \"\" ) }, \"{ t }\" )" );
 	
-	strictEqual( evl, rct.valueOf(), "evl === rct.valueOf()" );
-	strictEqual( react.eval( "ctxtVar" ), "noCtxt", "react.eval( \"ctxtVar\" ) === \"noCtxt\"" );
+	strictEqual( react( "(ctxtVar + ' to the max!'){ f }" ), "false to the max!", "context has to propagate down: react( \"(ctxtVar + ' to the max!'){ f }\" )" );
+	strictEqual( react( "(ctxtVar{ foo } + ' to the max!'){ f }" ), "foo to the max!", "context is custom: react( \"(ctxtVar{ t } + ' to the max!'){ f }\" )" );
+	strictEqual( react( "ctxtVar + (ctxtVar + ' to the max!'){ f }" ), "truefalse to the max!", "separated context array: react( \"ctxtVar + (ctxtVar + ' to the max!'){ f }\" )" );
 	
-	strictEqual( react.eval( "rea = x+t" ), x._value+t._value, "assignment: react.eval( \"rea = x+t\" )._value" );
+	ok( react( "cmplCtxtVar = (ctxtVar + ' to the max!'){ f }" ), "context set for complex var, but not for parts: react( \"cmplCtxtVar = (ctxtVar + ' to the max!'){ f }\" )" );
+	strictEqual( react( "cmplCtxtVar" ), "false to the max!", "complex var in default context: react( \"cmplCtxtVar\" )" );
+	strictEqual( react( "cmplCtxtVar{ foo }" ), "foo to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
+	
+	ok( react( "cmplCtxtVar = (ctxtVar{ foo } + ' to the max!'){ f }" ), "context set for complex var and for parts: react( \"cmplCtxtVar = (ctxtVar{ foo } + ' to the max!'){ f }\" )" );
+	strictEqual( react( "cmplCtxtVar" ), "foo to the max!", "complex var in default context: react( \"cmplCtxtVar\" )" );
+	strictEqual( react( "cmplCtxtVar{ t }" ), "foo to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
+	
+	ok( react( "cmplCtxtVar = ctxtVar + (ctxtVar + ' to the max!'){ f }" ), "context set and not set for parts: react( \"cmplCtxtVar = ctxtVar + (ctxtVar + ' to the max!'){ f }\" )" );
+	strictEqual( react( "cmplCtxtVar" ), "truefalse to the max!", "complex var in default context: react( \"cmplCtxtVar\" )" );
+	strictEqual( react( "cmplCtxtVar{ foo }" ), "foofalse to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
+	
+	react( "delete cmplCtxtVar; delete ctxtVar;" );
 } );
 
-test( "evaluation within context", function() {
-	var ctxtVar  = react.leak( "ctxtVar = ", function( ctxt, data ) {
-			return ctxt && data ? "ctxt+data" : ctxt ? "ctxt" : data ? "data" : "noCtxt";
-		} );
+test( "reactive behaviour to context changes", function() {
+	var func = function() {
+			var ret = 0, idx = arguments.length;
+			
+			while( idx-- )
+				ret += arguments[ idx ];
+			
+			return ret/2;
+		};
 	
-	ok( ctxtVar, "func var: ctxtVar = react.leak( \"ctxtVar = \", function( ctxt, data ) { return ctxt && data ? \"ctxt+data\" : ctxt ? \"ctxt\" : data ? \"data\" : \"noCtxt\"; } )" );
+	ok( react( "ctxtVar = ", func, "{ y, t }" ), "context variable with default context: react( \"ctxtVar = \", function() { var ret = 0, idx = arguments.length; while( idx-- ) ret += arguments idx ]; return ret/2; )" );
+	ok( react( "ctxtVar2 = (ctxtVar + 10){ x, t }" ), "default context default variable: react( \"ctxtVar2 = (ctxtVar + 10){ x, t }\" )" );
+	ok( react( "ctxtVar3 = ctxtVar + ctxtVar{ x, t }" ), "custom context variable in variable without default context: react( \"ctxtVar3 = ctxtVar + ctxtVar{ x, t }\" )" );
+	ok( react( "ctxtVar4 = ctxtVar * (ctxtVar + 5){ x, t }" ), "context array in variable without default context: react( \"ctxtVar4 = ctxtVar * (ctxtVar + 5){ x, t }\" )" );
 	
-	strictEqual( react.eval.inCtxt( true, {}, "ctxtVar" ), "ctxt+data", "react.eval.inCtxt( true, {}, \"ctxtVar\" ) === \"ctxt+data\"" );
-	strictEqual( react.eval.inCtxt( true, null, "ctxtVar" ), "ctxt", "react.eval.inCtxt( true, null, \"ctxtVar\" ) === \"ctxt\"" );
-	strictEqual( react.eval.inCtxt( null, "ctxtVar" ), "noCtxt", "react.eval.inCtxt( null, \"ctxtVar\" ) === \"noCtxt\"" );
-	raises( function() { react.eval.inCtxt( null, {}, "ctxtVar" ) }, "no context -> parsing from 2nd argument: react.eval.inCtxt( null, {}, \"ctxtVar\" ) -> exception" );
-	raises( function() { react.eval.inCtxt( "ctxtVar" ) }, "nothing given at all: react.eval.inCtxt( \"ctxtVar\" ) -> exception" );
-	ok( true, "besides custom datatypes, non-function variables do not care about context" );
+	strictEqual( react( "ctxtVar" ), ( y.valueOf() + t.valueOf() ) / 2, "react( \"ctxtVar\" )" );
+	strictEqual( react( "ctxtVar2" ), ( x.valueOf() + t.valueOf() ) / 2 + 10, "react( \"ctxtVar2\" )" );
+	strictEqual( react( "ctxtVar3" ), ( y.valueOf() + t.valueOf() ) / 2 + ( x.valueOf() + t.valueOf() ) / 2, "react( \"ctxtVar3\" )" );
+	strictEqual( react( "ctxtVar4" ), ( y.valueOf() + t.valueOf() ) / 2 * ( ( x.valueOf() + t.valueOf() ) / 2 + 5 ), "react( \"ctxtVar4\" )" );
+	
+	ok( react( "y += 1" ), "react( \"y += 1\" )" );
+	strictEqual( react( "ctxtVar" ), ( y.valueOf() + t.valueOf() ) / 2, "react( \"ctxtVar\" )" );
+	strictEqual( react( "ctxtVar2" ), ( x.valueOf() + t.valueOf() ) / 2 + 10, "react( \"ctxtVar2\" )" );
+	strictEqual( react( "ctxtVar3" ), ( y.valueOf() + t.valueOf() ) / 2 + ( x.valueOf() + t.valueOf() ) / 2, "react( \"ctxtVar3\" )" );
+	strictEqual( react( "ctxtVar4" ), ( y.valueOf() + t.valueOf() ) / 2 * ( ( x.valueOf() + t.valueOf() ) / 2 + 5 ), "react( \"ctxtVar4\" )" );
+	
+	ok( react( "x += 1" ), "react( \"x += 1\" )" );
+	strictEqual( react( "ctxtVar" ), ( y.valueOf() + t.valueOf() ) / 2, "react( \"ctxtVar\" )" );
+	strictEqual( react( "ctxtVar2" ), ( x.valueOf() + t.valueOf() ) / 2 + 10, "react( \"ctxtVar2\" )" );
+	strictEqual( react( "ctxtVar3" ), ( y.valueOf() + t.valueOf() ) / 2 + ( x.valueOf() + t.valueOf() ) / 2, "react( \"ctxtVar3\" )" );
+	strictEqual( react( "ctxtVar4" ), ( y.valueOf() + t.valueOf() ) / 2 * ( ( x.valueOf() + t.valueOf() ) / 2 + 5 ), "react( \"ctxtVar4\" )" );
+	
+	react( "delete ctxtVar4; delete ctxtVar3; delete ctxtVar2; delete ctxtVar;" );
+	
+	ok( isEmptyObj( react.leak( "x" )._partOf ), "after deletion of all ctxtVars, all dependencies were unlinked" );
 } );
-
-test( "assignment to variables", function() {
-	
-} );
-
-test( "assignment to object properties", function() {
-	var rea = react.leak( "rea = 5" ),
-		obj = {};
-	
-	ok( rea, "rea = react.leak( \"rea = 5\" )" );
-	ok( obj, "obj = {}" );
-	ok( react( "p = 'prop'" ), "react( \"p = 'prop'\" )" );
-	
-	strictEqual( react.eval( obj, "[ p ] = 50+t" ), 51, "react.eval( obj, \".prop = 50\" )" );
-	strictEqual( react.eval( obj, "[ p ]" ), 51, "react.eval( obj, \".prop\" )" );
-	strictEqual( obj.prop, 51, "obj.prop === 50" );
-	
-	strictEqual( react.eval( obj, "[ p ] = rea" ), rea._value, "react.eval( obj, \".prop = rea\" )" );
-	strictEqual( react.eval( obj, "[ p ]" ), rea._value, "react.eval( obj, \".prop\" )._value" );
-	strictEqual( obj.prop, rea._value, "obj.prop === rea" );
-	
-	react( "delete rea; delete p;" );
-} );
-
-test( "function calls", function() {
-
-} );
-
-
-module( "react.Datatype" );
-
-test( "non-reactive instantiation", function() {
-	var withoutNew = datatype( "foo", false, 10 ),
-		withNew = new datatype( "foo", false, 10 );
-	
-	ok( withoutNew, "withoutNew = datatype( \"foo\", false, 10 );" );
-	ok( withoutNew instanceof datatype, "withoutNew is instance of datatype" );
-	ok( !withoutNew._isReactive, "withoutNew is not reactive" );
-	
-	ok( withNew, "withNew = new datatype( \"foo\", false, 10 );" );
-	ok( withNew instanceof datatype, "withNew is instance of datatype" );
-	ok( !withNew._isReactive, "withNew is not reactive" );
-} );
-
-test( "reactive instantiation", function() {
-	var	rdata1 = react.leak( "no partOf", "x+t" ),
-		rdata2 = react.leak( "no partOf", "f" ),
-		rea = datatype( rdata1, rdata2, 10 );
-	
-	ok( rea, "rea = datatype( react( \"x+t\" ), react( \"f\" ), 10 );" );
-	ok( rea instanceof datatype, "rea is instance of datatype" );
-	ok( rea._isReactive, "rea is reactive" );
-	
-	ok( objContent( rea._dep, [ rdata1, rdata2 ] ), "rea._dep" );
-} );
-
-test( "context sensitivity with default valueOf: basic data", function() {
-	var def1 = defDatatype( "foo", false, 10 );
-	
-	ok( def1, "def1 = defDatatype( \"foo\", false, 10 )" );
-	
-	strictEqual( def1._evaled, null, "def1._evaled before .valueOf()" );
-	strictEqual( def1._string, null, "def1._string before .toString()" );
-	
-	strictEqual( def1.valueOf(), undefined, "def1.valueOf()" );
-	strictEqual( def1.toString(), "undefined", "def1.toString()" );
-	
-	strictEqual( def1._evaled, undefined, "def1._evaled after .valueOf()" );
-	strictEqual( def1._string, "undefined", "def1._string after .toString()" );
-} );
-
-test( "context sensitivity with default valueOf: function data", function() {
-	var def2 = defDatatype( function( ctxt ) { return ctxt ? "ctxt+foo" : "foo"; }, false, 10 );
-	
-	ok( def2, "def2 = defDatatype( function( ctxt ) { return ctxt ? \"ctxt+foo\" : \"foo\"; }, false, 10 )" );
-	
-	strictEqual( def2._evaled, null, "def2._evaled before .valueOf()" );
-	strictEqual( def2._string, null, "def2._string before .toString()" );
-	
-	strictEqual( def2.valueOf(), undefined, "def2.valueOf()" );
-	strictEqual( def2.toString(), "undefined", "def2.toString()" );
-	
-	strictEqual( def2._evaled, undefined, "def2._evaled after .valueOf()" );
-	strictEqual( def2._string, "undefined", "def2._string after .toString()" );
-} );
-
-test( "context sensitivity with default valueOf: reactive func var data", function() {
-	var ctxtVar  = react.leak( "ctxtVar = ", function( ctxt, data ) {
-			return ctxt && data ? "ctxt+data" : ctxt ? "ctxt" : data ? "data" : "noCtxt";
-		} );
-	
-	ok( ctxtVar, "func var: ctxtVar = react.leak( \"ctxtVar = \", function( ctxt, data ) { return ctxt && data ? \"ctxt+data\" : ctxt ? \"ctxt\" : data ? \"data\" : \"noCtxt\"; } )" );
-	
-	var def3 = defDatatype( ctxtVar, false, 10 );
-	
-	ok( def3, "def3 = defDatatype( ctxtVar, false, 10 )" );
-	
-	strictEqual( def3._evaled, null, "def3._evaled before .valueOf()" );
-	strictEqual( def3._string, null, "def3._string before .toString()" );
-	
-	strictEqual( def3.valueOf(), undefined, "def3.valueOf()" );
-	strictEqual( def3.toString(), "undefined", "def3.toString()" );
-	
-	strictEqual( def3._evaled, undefined, "def3._evaled after .valueOf()" );
-	strictEqual( def3._string, "undefined", "def3._string after .toString()" );
-} );
-
-test( "context sensitivity with custom, no-context valueOf: basic data", function() {
-	var noCtxt1 = datatype( "foo", false, 10 );
-	
-	ok( noCtxt1, "noCtxt1 = datatype( \"foo\", false, 10 )" );
-	
-	strictEqual( noCtxt1._evaled, null, "noCtxt1._evaled before .valueOf()" );
-	strictEqual( noCtxt1._string, null, "noCtxt1._string before .toString()" );
-	
-	strictEqual( noCtxt1.valueOf(), "foofalse10", "noCtxt1.valueOf()" );
-	strictEqual( noCtxt1.valueOf( true ), "foofalse10", "noCtxt1.valueOf( true )" );
-	strictEqual( noCtxt1.toString(), "foo", "noCtxt1.toString()" );
-	strictEqual( noCtxt1.toString( true ), "foo", "noCtxt1.toString( true )" );
-	
-	strictEqual( noCtxt1._evaled, "foofalse10", "noCtxt1._evaled after .valueOf()" );
-	strictEqual( noCtxt1._string, "foo", "noCtxt1._string after .toString()" );
-} );
-
-test( "context sensitivity with custom, no-context valueOf: function data", function() {
-	var noCtxt2 = datatype( function( ctxt ) { return ctxt ? "ctxt+foo" : "foo"; }, false, 10 );
-	
-	ok( noCtxt2, "noCtxt2 = datatype( function( ctxt ) { return ctxt ? \"ctxt+foo\" : \"foo\"; }, false, 10 )" );
-	
-	strictEqual( noCtxt2._evaled, null, "noCtxt2._evaled before .valueOf()" );
-	strictEqual( noCtxt2._string, null, "noCtxt2._string before .toString()" );
-	
-	strictEqual( noCtxt2.valueOf(), "foofalse10", "noCtxt2.valueOf()" );
-	strictEqual( noCtxt2.valueOf( true ), "foofalse10", "noCtxt2.valueOf( true )" );
-	strictEqual( noCtxt2.toString(), "foo", "noCtxt2.toString()" );
-	strictEqual( noCtxt2.toString( true ), "foo", "noCtxt2.toString( true )" );
-	
-	strictEqual( noCtxt2._evaled , "foofalse10", "noCtxt2._evaled after .valueOf()" );
-	strictEqual( noCtxt2._string, "foo", "noCtxt2._string after .toString()" );
-} );
-
-test( "context sensitivity with custom, no-context valueOf: reactive func var data", function() {
-	var ctxtVar  = react.leak( "ctxtVar = ", function( ctxt, data ) {
-			return ctxt && data ? "ctxt+data" : ctxt ? "ctxt" : data ? "data" : "noCtxt";
-		} );
-	
-	ok( ctxtVar, "func var: ctxtVar = react.leak( \"ctxtVar = \", function( ctxt, data ) { return ctxt && data ? \"ctxt+data\" : ctxt ? \"ctxt\" : data ? \"data\" : \"noCtxt\"; } )" );
-	
-	var noCtxt3 = datatype( ctxtVar, false, 10 );
-	
-	ok( noCtxt3, "noCtxt3 = datatype( ctxtVar, false, 10 )" );
-	
-	strictEqual( noCtxt3._evaled, null, "noCtxt3._evaled before .valueOf()" );
-	strictEqual( noCtxt3._string, null, "noCtxt3._string before .toString()" );
-	
-	strictEqual( noCtxt3.valueOf(), "noCtxtfalse10", "noCtxt3.valueOf()" );
-	strictEqual( noCtxt3.valueOf( true ), "noCtxtfalse10", "noCtxt3.valueOf( true )" );
-	strictEqual( noCtxt3.toString(), "noCtxt", "noCtxt3.toString()" );
-	strictEqual( noCtxt3.toString( true ), "noCtxt", "noCtxt3.toString( true )" );
-	
-	strictEqual( noCtxt3._evaled , "noCtxtfalse10", "noCtxt3._evaled after .valueOf()" );
-	strictEqual( noCtxt3._string, "noCtxt", "noCtxt3._string after .toString()" );
-} );
-
-test( "context sensitivity with custom, context valueOf: basic data", function() {
-	var ctxt1 = ctxtDatatype( "foo", false, 10 );
-	
-	ok( ctxt1, "ctxt1 = ctxtDatatype( \"foo\", false, 10 )" );
-	
-	strictEqual( ctxt1._evaled, null, "ctxt1._evaled before .valueOf()" );
-	strictEqual( ctxt1._string, null, "ctxt1._string before .toString()" );
-	
-	strictEqual( ctxt1.valueOf(), "foofalse10", "ctxt1.valueOf()" );
-	strictEqual( ctxt1.valueOf( true ), "typeCtxt+foofalse10", "ctxt1.valueOf( true )" );
-	strictEqual( ctxt1.toString(), "foo", "ctxt1.toString()" );
-	strictEqual( ctxt1.toString( true ), "typeCtxt+foo", "ctxt1.toString( true )" );
-	
-	strictEqual( ctxt1._evaled , null, "ctxt1._evaled after .valueOf()" );
-	strictEqual( ctxt1._string , null, "ctxt1._string after .toString()" );
-} );
-
-test( "context sensitivity with custom, context valueOf: function data", function() {
-	var ctxt2 = ctxtDatatype( function( ctxt ) { return ctxt ? "ctxt+foo" : "foo"; }, false, 10 );
-	
-	ok( ctxt2, "ctxt2 = ctxtDatatype( function( ctxt ) { return ctxt ? \"ctxt+foo\" : \"foo\"; }, false, 10 )" );
-	
-	strictEqual( ctxt2._evaled, null, "ctxt2._evaled before .valueOf()" );
-	strictEqual( ctxt2._string, null, "ctxt2._string before .toString()" );
-	
-	strictEqual( ctxt2.valueOf(), "foofalse10", "ctxt2.valueOf()" );
-	strictEqual( ctxt2.valueOf( true ), "typeCtxt+ctxt+foofalse10", "ctxt2.valueOf( true )" );
-	strictEqual( ctxt2.toString(), "foo", "ctxt2.toString()" );
-	strictEqual( ctxt2.toString( true ), "typeCtxt+ctxt+foo", "ctxt2.toString( true )" );
-	
-	strictEqual( ctxt2._evaled , null, "ctxt2._evaled after .valueOf()" );
-	strictEqual( ctxt2._string , null, "ctxt2._string after .toString()" );
-} );
-
-test( "context sensitivity with custom, context valueOf: reactive func var data", function() {
-	var ctxtVar  = react.leak( "ctxtVar = ", function( ctxt, data ) {
-			return ctxt && data ? "ctxt+data" : ctxt ? "ctxt" : data ? "data" : "noCtxt";
-		} );
-	
-	ok( ctxtVar, "func var: ctxtVar = react.leak( \"ctxtVar = \", function( ctxt, data ) { return ctxt && data ? \"ctxt+data\" : ctxt ? \"ctxt\" : data ? \"data\" : \"noCtxt\"; } )" );
-	
-	var ctxt3 = ctxtDatatype( ctxtVar, false, 10 );
-	
-	ok( ctxt3, "ctxt3 = ctxtDatatype( ctxtVar, false, 10 )" );
-	
-	strictEqual( ctxt3._evaled, null, "ctxt3._evaled before .valueOf()" );
-	strictEqual( ctxt3._string, null, "ctxt3._string before .toString()" );
-	
-	strictEqual( ctxt3.valueOf(), "noCtxtfalse10", "ctxt3.valueOf()" );
-	strictEqual( ctxt3.valueOf( true ), "typeCtxt+ctxtfalse10", "ctxt3.valueOf( true )" );
-	strictEqual( ctxt3.toString(), "noCtxt", "ctxt3.toString()" );
-	strictEqual( ctxt3.toString( true ), "typeCtxt+ctxt", "ctxt3.toString( true )" );
-	
-	strictEqual( ctxt3._evaled , null, "ctxt3._evaled after .valueOf()" );
-	strictEqual( ctxt3._string , null, "ctxt3._string after .toString()" );
-} );
-
-test( "operator overloading", function() {
-	var obj1 = datatype( "10", true, 20 ),
-		obj2 = datatype( "5",  true, 10 );
-	
-	ok( obj1, "obj1 = datatype( \"10\", true, 20 )" );
-	ok( obj2, "obj2 = datatype( \"5\",  true, 10 )" );
-	
-	strictEqual( react( obj1, "+", obj2 ), 30,  "overloaded, stand-alone operator: react( obj1, \"+\", obj2 )" );
-	
-	raises( function() { react( "!", obj1 ); }, "not overloaded, stand-alone prefix operator: react( \"!\", obj1 ) -> exception" );
-	strictEqual(
-		( function() {
-			try {
-				return react( "!", obj1 );
-			} catch( e ) {
-				return e.message;
-			}
-		}() ),
-		"react.js | Operator prefix! not defined for operand.",
-		"react( \"!\", obj1 )"
-	);
-	
-	raises( function() { react( obj1, "*", obj2 ); }, "not overloaded, stand-alone infix operator: react( obj1, \"*\", obj2 ) -> exception" );
-	strictEqual(
-		( function() {
-			try {
-				return react( obj1, "*", obj2 );
-			} catch( e ) {
-				return e.message;
-			}
-		}() ),
-		"react.js | Operator infix* not defined for operands.",
-		"react( obj1, \"*\", obj2 )"
-	);
-	
-	raises( function() { react( obj1, "-", obj2 ); }, "not overloaded, composed infix operator w\o needed operator * defined: react( obj1, \"-\", obj2 ) -> exception" );
-	strictEqual(
-		( function() {
-			try {
-				return react( obj1, "-", obj2 );
-			} catch( e ) {
-				return e.message;
-			}
-		}() ),
-		"react.js | Operator infix* not defined for operands.",
-		"react( obj1, \"-\", obj2 )"
-	);
-	
-	raises( function() { react( "-", obj1 ); }, "not overloaded, composed prefix operator w\o needed operator * defined: react( \"-\", obj1 ) -> exception" );
-	strictEqual(
-		( function() {
-			try {
-				return react( "-", obj1 );
-			} catch( e ) {
-				return e.message;
-			}
-		}() ),
-		"react.js | Operator infix* not defined for operands.",
-		"react( \"-\", obj1 )"
-	);
-} );
-*/
-
-
-module( "react.Reactive" );
-//TODO: add/remove dependencies
-
-module( "Custom parser" );
-//TODO
-
-
-//react( "clean" );
