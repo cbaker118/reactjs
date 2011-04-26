@@ -328,7 +328,7 @@
 							delete this.makeVar;
 							delete this.makeCtxtArray;
 						},
-						inCtxt = function( ctxt ) {
+						_inCtxt = function( ctxt ) {
 							delete this._isValArray;
 							this._isCtxtArray = true;
 							this._context = ctxt;
@@ -343,7 +343,7 @@
 						arr._prevValueOf = _prevValueOf;
 						
 						arr.makeVar		 = makeVar;
-						arr.inCtxt       = inCtxt;
+						arr._inCtxt       = _inCtxt;
 						
 						arr._isValArray  = true;
 						arr._dep		 = arr._dep || null;
@@ -2262,19 +2262,31 @@
 					};
 				},
 				function( v, ctxt ) {
+					var idx;
+					
 					if ( !v._isVar && !v._isValArray && typeof v !== "function" )
 						error( "{ must be preceeded by a function, variable or value array!" );
 					
-					if ( ctxt && ctxt._isValArray && ctxt[ 0 ] === "," )
+					if ( ctxt && ctxt._isValArray && ctxt[ 0 ] === "," ) {
 						ctxt = ctxt.slice( 1 );
-					else if ( ctxt !== undefined )
+						
+						idx = ctxt.length;
+						while( idx-- ) {
+							if ( !ctxt[ idx ]._isVar )
+								error( "context data must be a variable!" );
+						}
+						
+					} else if ( ctxt !== undefined ) {
+						if ( !ctxt._isVar )
+							error( "context data must be a variable!" );
 						ctxt = [ ctxt ];
+					}
 					
 					if ( ctxt ) {
 						if ( typeof v === "function" )
 							v._context = ctxt;
 						else
-							v = v.inCtxt( ctxt );
+							v = v._inCtxt( ctxt );
 					}
 					
 					return v;
@@ -3184,7 +3196,6 @@
 			
 			Variable.prototype = {
 				_guid   : 0,
-				_isReactive  : true,
 				
 				_value  : undefined,
 				_dep    : null,
@@ -3383,18 +3394,12 @@
 								if ( arg[ id ] && arg[ id ]._isVar ) {
 									this._dep[ arg[ id ]._guid ] = arg[ id ];
 									arg[ id ]._partOf[ this._guid ] = this;
-									
-									if ( arg[ id ]._hasCtxtEval )
-										this._hasCtxtEval = true;
 								}
 							}
 						
 						} else if ( arg._isVar ) {
 							this._dep[ arg._guid ] = arg;
 							arg._partOf[ this._guid ] = this;
-							
-							if ( arg._hasCtxtEval )
-								this._hasCtxtEval = true;
 						}
 					}
 					
@@ -3418,17 +3423,6 @@
 						}
 					}
 					
-					if ( !this._hasCtxtEval )
-						return this;
-					
-					//check, if object is still evaluating under context
-					for ( id in this._dep ) {
-						if ( this._dep[ id ]._hasCtxtEval )
-							return this;
-					}
-					
-					this._hasCtxtEval = false;
-					
 					return this;
 				},*/
 				
@@ -3437,11 +3431,14 @@
 					
 					if ( val && this._value === val ) {
 						if ( !val.hasOwnProperty( "_context" ) ) {
+							this._unlinkCtxtDeps();
 							delete this._context;
 							this._invalidate();
 							
 						} else if ( this._context !== val._context ) {
+							this._unlinkCtxtDeps();
 							this._context = val._context;
+							this._linkCtxtDeps();
 							delete val._context;
 							
 							this._invalidate();
@@ -3456,14 +3453,8 @@
 					//set new value
 					this._value = val;
 					
-					//delete partOfs on dependencies side
-					for ( id in this._dep ) {
-						if ( id === "depObj" )
-							continue;
-						
-						if ( this._dep[ id ]._partOf )
-							delete this._dep[ id ]._partOf[ this._guid ];
-					}
+					//delete links from dependencies to this instance
+					this._unlinkDeps();
 					
 					if ( val ) {
 						//set new dependency
@@ -3483,29 +3474,48 @@
 					//delete previous value
 					delete this._prev;
 					
-					if ( !dontTrack ) {
-						//set new partOf on dependencies' side
-						for ( id in this._dep ) {
-							if ( id === "depObj" )
-								continue;
-							
-							this._dep[ id ]._partOf[ this._guid ] = this;
-						}
-					}
+					if ( !dontTrack )
+						//link dependencies to this instance
+						this._linkDeps();
 					
 					return this;
 				},
-				inCtxt : function( ctxt ) {
-					var v = Object.create( this );
-					v._customContext = ctxt;
-					return v;
-				},
-				"delete" : function() {
+				_linkDeps : function() {
+					//set partOf on dependencies' side
 					var id;
+					for ( id in this._dep ) {
+						if ( id === "depObj" )
+							continue;
+						
+						this._dep[ id ]._partOf[ this._guid ] = this;
+					}
 					
-					delete this._value;
+					this._linkCtxtDeps();
+				},
+				_linkCtxtDeps : function( v ) {
+					//set partOf of context parts
+					var ctxt = this._customContext || this._context,
+						v = v || this,
+						idx;
 					
-					//delete partOfs on dependencies side
+					if ( ctxt ) {
+						idx = ctxt.length;
+						while ( idx-- )
+							ctxt[ idx ]._partOf[ v._guid ] = v;
+					}
+					
+					if ( v !== this || !this._value || !this._value._isValArray )
+						return;
+					
+					idx = this._value.length;
+					while ( idx-- ) {
+						if ( this._value[ idx ]._customContext || this._value[ idx ]._isCtxtArray )
+							this._linkCtxtDeps.call( this._value[ idx ], this );
+					}
+				},
+				_unlinkDeps : function() {
+					//delete partOf on dependencies' side
+					var id;
 					for ( id in this._dep ) {
 						if ( id === "depObj" )
 							continue;
@@ -3514,10 +3524,47 @@
 							delete this._dep[ id ]._partOf[ this._guid ];
 					}
 					
+					this._unlinkCtxtDeps();
+				},
+				_unlinkCtxtDeps : function( v ) {
+					//delete partOf of context parts
+					var ctxt = this._customContext || this._context,
+						v = v || this,
+						idx;
+					
+					if ( ctxt ) {
+						idx = ctxt.length
+						while ( idx-- )
+							delete ctxt[ idx ]._partOf[ v._guid ];
+					}
+					
+					if ( v !== this || !this._value || !this._value._isValArray )
+						return;
+					
+					idx = this._value.length;
+					while ( idx-- ) {
+						if ( this._value[ idx ]._customContext || this._value[ idx ]._isCtxtArray )
+							this._unlinkCtxtDeps.call( this._value[ idx ], this );
+					}
+				},
+				_inCtxt : function( ctxt ) {
+					var v = Object.create( this );
+					
+					v._guid = Variable.prototype._guid++;
+					v._customContext = ctxt;
+					
+					return v;
+				},
+				"delete" : function() {
+					var id;
+					
+					this._unlinkDeps();
+					
+					delete this._value;
+					
 					delete this._string;
 					delete this._evaled;
 					
-					delete this._isReactive;
 					delete this._guid
 					delete this._dep;
 					delete this._partOf;
