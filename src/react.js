@@ -533,14 +533,20 @@
 												return op.nudEval[ type ].apply( this, arguments );
 											};
 							
-							op.nudEval = function( operand, undef, interpreter ) {
-								//check for overloaded operators
-								if ( operand && operand[ id ] )
-									return operand[ id ].call( operand );
-								
-								//standard operator behavior
-								return stdFunc.call( this, operand, interpreter );
-							};
+							if ( type === "prefix" )
+								op.nudEval = function( operand, undef, interpreter ) {
+									//check for overloaded operators
+									if ( operand && operand[ id ] )
+										return operand[ id ].call( operand );
+									
+									//standard operator behavior
+									return stdFunc.call( this, operand, interpreter );
+								};
+							else
+								op.nudEval = function( operand, undef, interpreter ) {
+									//standard operator behavior
+									return stdFunc.call( this, operand, interpreter );
+								};
 							
 							//append lit, ref and arr functions to base eval function
 							if ( typeof eval === "object" )
@@ -586,17 +592,21 @@
 												return op.ledEval[ typeL ][ typeR ].apply( this, arguments );
 											};
 							
-							op.ledEval = function( left, right, interpreter ) {
-								//check for overloaded operators
-								if ( left && left[ id ] )
-									return left[ id ].call( left, right );
-								
-								if ( right && right[ id ] )
-									return right[ id ].call( right, left, true );
-								
-								//standard operator behavior
-								return stdFunc.call( this, left, right, interpreter );
-							};
+							if ( type !== "assignment" )
+								op.ledEval = function( left, right, interpreter ) {
+									//check for overloaded operators
+									if ( left && left[ id ] )
+										return left[ id ].call( left, right );
+									
+									if ( right && right[ id ] )
+										return right[ id ].call( right, left, true );
+									
+									//standard operator behavior
+									return stdFunc.call( this, left, right, interpreter );
+								};
+							else
+								op.ledEval = stdFunc;
+
 							
 							//append lit, ref and arr functions to base eval function
 							if ( typeof eval === "object" )
@@ -618,7 +628,7 @@
 				return interpreter.nameTable.clean();
 			} );
 			
-			operator( "cleanExcept", "prefix", 4, null, function( vars, interpreter ) {
+			operator( "cleanExcept", "delete", 4, null, function( vars, interpreter ) {
 				if ( vars === undefined )
 					error( "'except' has to be followed by a list of one or more variable names" );
 				

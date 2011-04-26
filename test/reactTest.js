@@ -2529,7 +2529,7 @@ test( "operator overloading", function() {
 	//overloaded composed operators needs no testing
 	
 	//operator assignment
-	strictEqual( react( opObj, "+=", 100 ), 106, "operator-assignment: react( opObj, \"+=\", 100 )" );
+	raises( function() { react( opObj, "+=", 100 ) }, "operator-assignment not possible for external objects" );
 } );
 
 test( "custom datatype", function() {
