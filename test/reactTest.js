@@ -2577,10 +2577,10 @@ test( "simple context variables with default context", function() {
 	}, "{ t }" );
 	
 	ok( true, "context variable with default context t: react( \"ctxtVar = \", function( data ) { return ( data ? \"data\" : \"\" ) }, \"{ t }\" )" );
-	strictEqual( react( "ctxtVar" ), true, "evaluation in default context: react( \"ctxtVar\" )" );
-	strictEqual( react( "ctxtVar{ x }" ), x.valueOf(), "evaluation in custom context: react( \"ctxtVar{ x }\" )" );
-	strictEqual( react( "ctxtVar" ), true, "no change of evaluation in default context: react( \"ctxtVar\" )" );
-	strictEqual( react( "ctxtVar = ctxtVar{ f }" ), false, "change of context: react( \"ctxtVar = ctxtVar{ f }\" )" );
+	strictEqual( react( "ctxtVar" ), t.valueOf(), "evaluation in default context: react( \"ctxtVar\" )" );
+	strictEqual( react( "ctxtVar{ x }" ), t.valueOf(), "evaluation in custom context: react( \"ctxtVar{ x }\" )" );
+	strictEqual( react( "ctxtVar" ), t.valueOf(), "no change of evaluation in default context: react( \"ctxtVar\" )" );
+	strictEqual( react( "ctxtVar = ctxtVar{ f }" ), f.valueOf(), "change of set context not possible: react( \"ctxtVar = ctxtVar{ f }\" )" );
 	
 	react( "delete ctxtVar" );
 } );
@@ -2593,6 +2593,7 @@ test( "simple context variables without default context", function() {
 	
 	ok( ctxtVar = react.leak( "ctxtVar = ", func, "{ t }" ), "context variable with default context: react( \"ctxtVar = \", function( data ) { return ( data ? \"data\" : \"\" ) }, \"{ t }\" )" );
 	ok( ctxtVar._context[ 0 ] === t, "context of ctxtVar set to t" );
+	
 	ok( react( "ctxtVar = ", func ), "context variable without default context: react( \"ctxtVar = \", function( data ) { return ( data ? \"data\" : \"\" ) } )" );
 	ok( ctxtVar._context === null, "context of ctxtVar reset to null" );
 	
@@ -2600,7 +2601,9 @@ test( "simple context variables without default context", function() {
 	strictEqual( react( "ctxtVar{ x }" ), x.valueOf(), "evaluation in custom context: react( \"ctxtVar{ x }\" )" );
 	strictEqual( react( "ctxtVar" ), func, "variable still acts as normal function: react( \"ctxtVar\" )" );
 	strictEqual( react( "ctxtVar = ctxtVar{ f }" ), false, "change of context: react( \"ctxtVar = ctxtVar{ f }\" )" );
-	strictEqual( react( "ctxtVar = ctxtVar{}" ), func, "remove default context: react( \"ctxtVar = ctxtVar{}\" )" );
+	ok( ctxtVar._context[ 0 ] === f, "context of ctxtVar reset to null" );
+	strictEqual( react( "ctxtVar = ctxtVar{}" ), func, "deletion of context: react( \"ctxtVar = ctxtVar{}\" )" );
+	ok( ctxtVar._context === null, "context of ctxtVar reset to null" );
 	
 	react( "delete ctxtVar" );
 } );
@@ -2618,16 +2621,20 @@ test( "complex context variable with simple context variable without default con
 	strictEqual( react( "(ctxtVar{ foo } + ' to the max!'){ f }" ), "foo to the max!", "context is custom: react( \"(ctxtVar{ foo } + ' to the max!'){ f }\" )" );
 	strictEqual( react( "ctxtVar + (ctxtVar + ' to the max!'){ f }" ), String( func ) + "false to the max!", "separated context array: react( \"ctxtVar + (ctxtVar + ' to the max!'){ f }\" )" );
 	
-	ok( react( "cmplCtxtVar = (ctxtVar + ' to the max!'){ f }" ), "context set for complex var, but not for parts: react( \"cmplCtxtVar = (ctxtVar + ' to the max!'){ f }\" )" );
-	strictEqual( react( "cmplCtxtVar" ), "false to the max!", "complex var in default context: react( \"cmplCtxtVar\" )" );
+	ok( react( "cmplCtxtVar = ctxtVar + ' to the max!'" ), "complex var without any contexts set: react( \"cmplCtxtVar = ctxtVar + ' to the max!'\" )" );
+	strictEqual( react( "cmplCtxtVar" ), String( func ) + " to the max!", "complex var in no given context: react( \"cmplCtxtVar\" )" );
 	strictEqual( react( "cmplCtxtVar{ t }" ), "true to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
 	
-	ok( react( "cmplCtxtVar = (ctxtVar{ foo } + ' to the max!'){ f }" ), "context set for complex var and for parts: react( \"cmplCtxtVar = (ctxtVar{ foo } + ' to the max!'){ f }\" )" );
-	strictEqual( react( "cmplCtxtVar" ), "foo to the max!", "complex var in default context: react( \"cmplCtxtVar\" )" );
+	ok( react( "cmplCtxtVar = (ctxtVar + ' to the max!'){ f }" ), "context set for value of complex var: react( \"cmplCtxtVar = (ctxtVar + ' to the max!'){ f }\" )" );
+	strictEqual( react( "cmplCtxtVar" ), "false to the max!", "complex var in no given context: react( \"cmplCtxtVar\" )" );
+	strictEqual( react( "cmplCtxtVar{ t }" ), "false to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
+	
+	ok( react( "cmplCtxtVar = (ctxtVar{ foo } + ' to the max!'){ f }" ), "context set for value of complex var and for parts: react( \"cmplCtxtVar = (ctxtVar{ foo } + ' to the max!'){ f }\" )" );
+	strictEqual( react( "cmplCtxtVar" ), "foo to the max!", "complex var in no given context: react( \"cmplCtxtVar\" )" );
 	strictEqual( react( "cmplCtxtVar{ t }" ), "foo to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
 	
 	ok( react( "cmplCtxtVar = ctxtVar + (ctxtVar + ' to the max!'){ f }" ), "context set and not set for parts: react( \"cmplCtxtVar = ctxtVar + (ctxtVar + ' to the max!'){ f }\" )" );
-	strictEqual( react( "cmplCtxtVar" ), String( func ) + "false to the max!", "complex var in default context: react( \"cmplCtxtVar\" )" );
+	strictEqual( react( "cmplCtxtVar" ), String( func ) + "false to the max!", "complex var in no given context: react( \"cmplCtxtVar\" )" );
 	strictEqual( react( "cmplCtxtVar{ t }" ), "truefalse to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
 	
 	react( "delete cmplCtxtVar; delete ctxtVar;" );
@@ -2640,21 +2647,25 @@ test( "complex context variable with simple context variable with default contex
 	
 	ok( react( "ctxtVar = ", func, "{ t }" ), "context variable with default context: react( \"ctxtVar = \", function( data ) { return ( data ? \"data\" : \"\" ) }, \"{ t }\" )" );
 	
-	strictEqual( react( "(ctxtVar + ' to the max!'){ f }" ), "false to the max!", "context has to propagate down: react( \"(ctxtVar + ' to the max!'){ f }\" )" );
-	strictEqual( react( "(ctxtVar{ foo } + ' to the max!'){ f }" ), "foo to the max!", "context is custom: react( \"(ctxtVar{ t } + ' to the max!'){ f }\" )" );
-	strictEqual( react( "ctxtVar + (ctxtVar + ' to the max!'){ f }" ), "truefalse to the max!", "separated context array: react( \"ctxtVar + (ctxtVar + ' to the max!'){ f }\" )" );
+	strictEqual( react( "(ctxtVar + ' to the max!'){ f }" ), "true to the max!", "context has to propagate down: react( \"(ctxtVar + ' to the max!'){ f }\" )" );
+	strictEqual( react( "(ctxtVar{ foo } + ' to the max!'){ f }" ), "true to the max!", "context is custom: react( \"(ctxtVar{ t } + ' to the max!'){ f }\" )" );
+	strictEqual( react( "ctxtVar + (ctxtVar + ' to the max!'){ f }" ), "truetrue to the max!", "separated context array: react( \"ctxtVar + (ctxtVar + ' to the max!'){ f }\" )" );
+	
+	ok( react( "cmplCtxtVar = ctxtVar + ' to the max!'" ), "complex var without any contexts set: react( \"cmplCtxtVar = ctxtVar + ' to the max!'\" )" );
+	strictEqual( react( "cmplCtxtVar" ), "true to the max!", "complex var in no given context: react( \"cmplCtxtVar\" )" );
+	strictEqual( react( "cmplCtxtVar{ foo }" ), "true to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
 	
 	ok( react( "cmplCtxtVar = (ctxtVar + ' to the max!'){ f }" ), "context set for complex var, but not for parts: react( \"cmplCtxtVar = (ctxtVar + ' to the max!'){ f }\" )" );
-	strictEqual( react( "cmplCtxtVar" ), "false to the max!", "complex var in default context: react( \"cmplCtxtVar\" )" );
-	strictEqual( react( "cmplCtxtVar{ foo }" ), "foo to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
+	strictEqual( react( "cmplCtxtVar" ), "true to the max!", "complex var in no given context: react( \"cmplCtxtVar\" )" );
+	strictEqual( react( "cmplCtxtVar{ foo }" ), "true to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
 	
 	ok( react( "cmplCtxtVar = (ctxtVar{ foo } + ' to the max!'){ f }" ), "context set for complex var and for parts: react( \"cmplCtxtVar = (ctxtVar{ foo } + ' to the max!'){ f }\" )" );
-	strictEqual( react( "cmplCtxtVar" ), "foo to the max!", "complex var in default context: react( \"cmplCtxtVar\" )" );
-	strictEqual( react( "cmplCtxtVar{ t }" ), "foo to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
+	strictEqual( react( "cmplCtxtVar" ), "true to the max!", "complex var in no given context: react( \"cmplCtxtVar\" )" );
+	strictEqual( react( "cmplCtxtVar{ t }" ), "true to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
 	
 	ok( react( "cmplCtxtVar = ctxtVar + (ctxtVar + ' to the max!'){ f }" ), "context set and not set for parts: react( \"cmplCtxtVar = ctxtVar + (ctxtVar + ' to the max!'){ f }\" )" );
-	strictEqual( react( "cmplCtxtVar" ), "truefalse to the max!", "complex var in default context: react( \"cmplCtxtVar\" )" );
-	strictEqual( react( "cmplCtxtVar{ foo }" ), "foofalse to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
+	strictEqual( react( "cmplCtxtVar" ), "truetrue to the max!", "complex var in no given context: react( \"cmplCtxtVar\" )" );
+	strictEqual( react( "cmplCtxtVar{ foo }" ), "truetrue to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
 	
 	react( "delete cmplCtxtVar; delete ctxtVar;" );
 } );
@@ -2669,24 +2680,22 @@ test( "reactive behaviour to context changes", function() {
 			return ret/2;
 		};
 	
-	ok( react( "ctxtVar = ", func, "{ y, t }" ), "context variable with default context: react( \"ctxtVar = \", function() { var ret = 0, idx = arguments.length; while( idx-- ) ret += arguments idx ]; return ret/2; )" );
-	ok( react( "ctxtVar2 = (ctxtVar + 10){ x, t }" ), "default context default variable: react( \"ctxtVar2 = (ctxtVar + 10){ x, t }\" )" );
-	ok( react( "ctxtVar3 = ctxtVar + ctxtVar{ x, t }" ), "custom context variable in variable without default context: react( \"ctxtVar3 = ctxtVar + ctxtVar{ x, t }\" )" );
-	ok( react( "ctxtVar4 = ctxtVar * (ctxtVar + 5){ x, t }" ), "context array in variable without default context: react( \"ctxtVar4 = ctxtVar * (ctxtVar + 5){ x, t }\" )" );
+	ok( react( "ctxtVar = ", func ), "context variable without default context: react( \"ctxtVar = \", function() { var ret = 0, idx = arguments.length; while( idx-- ) ret += arguments idx ]; return ret/2; )" );
+	ok( react( "ctxtVar2 = (ctxtVar + 10){ x, t }" ), "complex context variable: react( \"ctxtVar2 = (ctxtVar + 10){ x, t }\" )" );
 	
-	strictEqual( react( "ctxtVar" ), ( y.valueOf() + t.valueOf() ) / 2, "react( \"ctxtVar\" )" );
+	ok( react( "ctxtVar3 = ctxtVar{ y, t } + ctxtVar{ x, t }" ), "custom context variables in variable without default context: react( \"ctxtVar3 = ctxtVar + ctxtVar{ x, t }\" )" );
+	ok( react( "ctxtVar4 = ctxtVar{ y, t } * (ctxtVar + 5){ x, t }" ), "context array in variable without default context: react( \"ctxtVar4 = ctxtVar * (ctxtVar + 5){ x, t }\" )" );
+	
 	strictEqual( react( "ctxtVar2" ), ( x.valueOf() + t.valueOf() ) / 2 + 10, "react( \"ctxtVar2\" )" );
 	strictEqual( react( "ctxtVar3" ), ( y.valueOf() + t.valueOf() ) / 2 + ( x.valueOf() + t.valueOf() ) / 2, "react( \"ctxtVar3\" )" );
 	strictEqual( react( "ctxtVar4" ), ( y.valueOf() + t.valueOf() ) / 2 * ( ( x.valueOf() + t.valueOf() ) / 2 + 5 ), "react( \"ctxtVar4\" )" );
 	
 	ok( react( "y += 1" ), "react( \"y += 1\" )" );
-	strictEqual( react( "ctxtVar" ), ( y.valueOf() + t.valueOf() ) / 2, "react( \"ctxtVar\" )" );
 	strictEqual( react( "ctxtVar2" ), ( x.valueOf() + t.valueOf() ) / 2 + 10, "react( \"ctxtVar2\" )" );
 	strictEqual( react( "ctxtVar3" ), ( y.valueOf() + t.valueOf() ) / 2 + ( x.valueOf() + t.valueOf() ) / 2, "react( \"ctxtVar3\" )" );
 	strictEqual( react( "ctxtVar4" ), ( y.valueOf() + t.valueOf() ) / 2 * ( ( x.valueOf() + t.valueOf() ) / 2 + 5 ), "react( \"ctxtVar4\" )" );
 	
 	ok( react( "x += 1" ), "react( \"x += 1\" )" );
-	strictEqual( react( "ctxtVar" ), ( y.valueOf() + t.valueOf() ) / 2, "react( \"ctxtVar\" )" );
 	strictEqual( react( "ctxtVar2" ), ( x.valueOf() + t.valueOf() ) / 2 + 10, "react( \"ctxtVar2\" )" );
 	strictEqual( react( "ctxtVar3" ), ( y.valueOf() + t.valueOf() ) / 2 + ( x.valueOf() + t.valueOf() ) / 2, "react( \"ctxtVar3\" )" );
 	strictEqual( react( "ctxtVar4" ), ( y.valueOf() + t.valueOf() ) / 2 * ( ( x.valueOf() + t.valueOf() ) / 2 + 5 ), "react( \"ctxtVar4\" )" );

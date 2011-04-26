@@ -3207,17 +3207,18 @@
 				valueOf : function() {
 					try {
 						var idx, context;
-						if ( this._customContext || arguments.length ) {
-							context = [];
-							idx = ( this._customContext || arguments ).length;
-							while( idx-- )
-								context[ idx ] = ( this._customContext || arguments )[ idx ].valueOf();
-							
+						
+						if ( !this._context && arguments.length ) {
 							if ( typeof this._value === "function" ) {
+								context = [];
+								idx = arguments.length;
+								while( idx-- )
+									context[ idx ] = arguments[ idx ].valueOf();
+								
 								return this._value.apply( null, context );
 							
 							} else if ( this._value && this._value.valueOf )
-								return this._value.valueOf( context );
+								return this._value.valueOf.apply( this._value, arguments );
 							
 							else
 								return this._value;
@@ -3411,8 +3412,12 @@
 							val.makeVar();
 						
 						//set context
-						this._context = val._context;
-						delete val._context;
+						if ( val._context ) {
+							this._context = val._context;
+							delete val._context;
+						} else {
+							delete this._context;
+						}
 					}
 					
 					//invalidate
@@ -3441,7 +3446,7 @@
 				},
 				_linkCtxtDeps : function( v ) {
 					//set partOf of context parts
-					var ctxt = this._customContext || this._context,
+					var ctxt = this._context,
 						v = v || this,
 						idx;
 					
@@ -3456,7 +3461,9 @@
 					
 					idx = this._value.length;
 					while ( idx-- ) {
-						if ( this._value[ idx ]._customContext || this._value[ idx ]._isCtxtArray )
+						if ( this._value[ idx ]._isCtxtVar )
+							this._value[ idx ]._linkCtxtDeps();
+						else if ( this._value[ idx ]._isCtxtArray )
 							this._linkCtxtDeps.call( this._value[ idx ], this );
 					}
 				},
@@ -3475,7 +3482,7 @@
 				},
 				_unlinkCtxtDeps : function( v ) {
 					//delete partOf of context parts
-					var ctxt = this._customContext || this._context,
+					var ctxt = this._context,
 						v = v || this,
 						idx;
 					
@@ -3490,15 +3497,21 @@
 					
 					idx = this._value.length;
 					while ( idx-- ) {
-						if ( this._value[ idx ]._customContext || this._value[ idx ]._isCtxtArray )
+						if ( this._value[ idx ]._isCtxtVar )
+							this._value[ idx ]._unlinkCtxtDeps();
+						else if ( this._value[ idx ]._isCtxtArray )
 							this._unlinkCtxtDeps.call( this._value[ idx ], this );
 					}
 				},
 				_inCtxt : function( ctxt ) {
+					if ( this._context )
+						return this;
+					
 					var v = Object.create( this );
 					
 					v._guid = Variable.prototype._guid++;
-					v._customContext = ctxt;
+					v._context = ctxt;
+					v._isCtxtVar = true;
 					
 					return v;
 				},
