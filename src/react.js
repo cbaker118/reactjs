@@ -2273,8 +2273,8 @@
 				function( v, ctxt ) {
 					var idx;
 					
-					if ( !v._isVar && !v._isValArray && typeof v !== "function" )
-						error( "{ must be preceeded by a function, variable or value array!" );
+					if ( !v._isVar && !v._isValArray )
+						error( "{ must be preceeded by a variable or value array!" );
 					
 					if ( ctxt && ctxt._isValArray && ctxt[ 0 ] === "," ) {
 						ctxt = ctxt.slice( 1 );
@@ -2288,15 +2288,12 @@
 					} else if ( ctxt !== undefined ) {
 						if ( !ctxt._isVar )
 							error( "context data must be a variable!" );
+						
 						ctxt = [ ctxt ];
 					}
 					
-					if ( ctxt ) {
-						if ( typeof v === "function" )
-							v._context = ctxt;
-						else
-							v = v._inCtxt( ctxt );
-					}
+					if ( ctxt )
+						v = v._inCtxt( ctxt );
 					
 					return v;
 				}
@@ -3387,23 +3384,8 @@
 				set : function( val ) {
 					var id;
 					
-					if ( val && this._value === val ) {
-						if ( !val.hasOwnProperty( "_context" ) ) {
-							this._unlinkCtxtDeps();
-							delete this._context;
-							this._invalidate();
-							
-						} else if ( this._context !== val._context ) {
-							this._unlinkCtxtDeps();
-							this._context = val._context;
-							this._linkCtxtDeps();
-							delete val._context;
-							
-							this._invalidate();
-						}
-						
+					if ( val && this._value === val )
 						return this;
-					}
 					
 					//save previous value temporarily, so invalidation has access to it, if necessary
 					this._prev = this._value;
