@@ -46,7 +46,7 @@
 			var i = arr1.length;
 			while ( i-- ) {
 				if ( arr1[ i ].constructor === Array ) {
-					if ( equivArr( arr1[ i ], arr2[ i ] ) )
+					if ( equiv( arr1[ i ], arr2[ i ] ) )
 						continue;
 					else
 						return false;
@@ -628,11 +628,11 @@
 				return interpreter.nameTable.clean();
 			} );
 			
-			operator( "cleanExcept", "delete", 4, null, function( vars, interpreter ) {
+			operator( "cleanExcept", "prefix", 4, null, function( vars, interpreter ) {
 				if ( vars === undefined )
-					error( "'except' has to be followed by a list of one or more variable names" );
+					return interpreter.nameTable.clean();
 				
-				if ( vars.id !== "(id)" && ( !vars._isValArray || vars[ 0 ] !== "," ) )
+				if ( !vars._isVar && ( !vars._isValArray || vars[ 0 ] !== "," ) )
 					error( "'except' has to be followed by a list of one or more variable names" );
 				
 				var varObj = {};
@@ -642,10 +642,11 @@
 					var i = vars.length;
 					
 					while ( i-- ) {
-						varObj[ vars[ i ]._key ] = vars[ i ];
+						if ( vars[ i ] )
+							varObj[ vars[ i ]._key ] = vars[ i ];
 					}
 				
-				} else {
+				} else if ( vars ) {
 					varObj[ vars._key ] = vars;
 				}
 				
@@ -2281,13 +2282,13 @@
 						
 						idx = ctxt.length;
 						while( idx-- ) {
-							if ( !ctxt[ idx ]._isVar )
-								error( "context data must be a variable!" );
+							if ( ctxt[ idx ]._isValArray || ctxt[ idx ]._isCtxtArray )
+								error( "context data must be a literal or variable!" );
 						}
 						
 					} else if ( ctxt !== undefined ) {
-						if ( !ctxt._isVar )
-							error( "context data must be a variable!" );
+						if ( ctxt._isValArray || ctxt._isCtxtArray )
+							error( "context data must be a literal or variable!" );
 						
 						ctxt = [ ctxt ];
 					}
@@ -3444,8 +3445,10 @@
 					
 					if ( ctxt ) {
 						idx = ctxt.length;
-						while ( idx-- )
-							ctxt[ idx ]._partOf[ v._guid ] = v;
+						while ( idx-- ) {
+							if ( ctxt[ idx ]._isVar )
+								ctxt[ idx ]._partOf[ v._guid ] = v;
+						}
 					}
 					
 					if ( v !== this || !this._value || !this._value._isValArray )
@@ -3481,7 +3484,8 @@
 					if ( ctxt ) {
 						idx = ctxt.length
 						while ( idx-- )
-							delete ctxt[ idx ]._partOf[ v._guid ];
+							if ( ctxt[ idx ]._isVar )
+								delete ctxt[ idx ]._partOf[ v._guid ];
 					}
 					
 					if ( v !== this || !this._value || !this._value._isValArray )
