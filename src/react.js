@@ -2300,15 +2300,7 @@
 				};
 			
 			operator( "(", "call", 100, null, function( func, args ) {
-				var funcLit,
-					ctxtLit = window,
-					argLits = [],
-					varInArgs = false,
-					argsArr,
-					val,
-					rea,
-					key,
-					track = !dontTrack && !this.prevToken && !this.nextToken;
+				var argsArr, call;
 				
 				//create arguments array to bind
 				if ( args && args._isValArray && args[ 0 ] === "," ) {
@@ -2319,16 +2311,13 @@
 					argsArr = args !== undefined ? [ args ] : args;
 				}
 				
-				var call = FunctionCall( func, argsArr, true );
-				call._call();
+				call = FunctionCall( func, argsArr, true );
+				call instanceof FunctionCall && call._call();
 				return call;
 			} );
 			
 			operator( ":(", "call", 100, null, function( func, args ) {
-				var varInArgs = false,
-					argsArr,
-					tmp,
-					rea;
+				var argsArr;
 				
 				//create arguments array to bind
 				if ( args && args._isValArray && args[ 0 ] === "," ) {
@@ -2343,7 +2332,7 @@
 			} );
 			
 			operator( "~(", "call", 100, null, function( func, args ) {
-				var key, argsArr;
+				var argsArr;
 				
 				//create arguments array
 				if ( args && args._isValArray && args[ 0 ] === "," ) {
@@ -3244,12 +3233,23 @@
 			
 			//function calls
 			var FunctionCall = function( func, args, evalArgs ) {
+					if ( func._isVar && func._locked )
+						func = func._value;
+						
+					if ( args === undefined )
+						args = [];
+					else if ( args.constructor !== Array || args._isExprArray )
+						args = [ args ];
+					
+					if ( typeof func === "function" && args[ 0 ] && args[ 0 ]._func && args[ 0 ]._func.inverse === func )
+						return args[ 0 ]._args[ 0 ];
+					
 					var c = this instanceof FunctionCall ? this : Object.create( FunctionCall.prototype );
 					
 					c._guid	= FunctionCall.prototype._guid++;
 					
 					c._func = func;
-					c._args = args === undefined ? [] : args.constructor === Array ? args : [ args ];
+					c._args = args;
 					c._argLits = [];
 					c._partOf = {};
 					c._evalArgs = !!evalArgs;
@@ -3663,7 +3663,7 @@
 							
 							ret = interpret.apply( props, arguments );
 							
-							if ( ret._isExprArray )
+							if ( ret._isExprArray || ret._isCall )
 								ret = props.nameTable.set( null, ret );
 							
 							dontTrack = false;

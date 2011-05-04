@@ -213,11 +213,12 @@ test( "projection functions: basic datatypes", function() {
 test( "trigonometric functions and exp/log: variables (all behave the same)", function() {
 	var sin = react( "sin" );
 	
-	ok( equivArr( react.leak( "no partOf", "sin( x )" )._value, [ "(", sin, x ] ), "react( \"sin( x )\" )" );
-	ok( objContent( react.leak( "no partOf", "sin( x )" )._dep, [ x ] ), "react( \"sin( x )\" )._dep" );
+	strictEqual( react.leak( "no partOf", "sin( x )" )._value._func, sin , "react( \"sin( x )\" )._value._func" );
+	ok( equivArr( react.leak( "no partOf", "sin( x )" )._value._args, [ x ] ), "react( \"sin( x )\" )._value._args" );
 	
-	ok( equivArr( react.leak( "no partOf", "sin( sin( x ) )" )._value, [ "(", sin, [ "(", sin, x ] ] ), "react( \"sin( sin( x ) )\" )" );
-	ok( objContent( react.leak( "no partOf", "sin( sin( x ) )" )._dep, [ x ] ), "react( \"sin( sin( x) )\" )._dep" );
+	strictEqual( react.leak( "no partOf", "sin( sin( x ) )" )._value._func, sin , "react( \"sin( sin( x ) )\" )._value._func" );
+	strictEqual( react.leak( "no partOf", "sin( sin( x ) )" )._value._args[ 0 ]._func, sin, "react( \"sin( sin( x ) )\" )._value._args[ 0 ]._func" );
+	ok( equivArr( react.leak( "no partOf", "sin( sin( x ) )" )._value._args[ 0 ]._args, [ x ] ), "react( \"sin( sin( x ) )\" )._value._args[ 0 ]._args" );
 	
 	ok( react.leak( "no partOf", "asin( sin( x ) )" ) === x, "react( \"asin( sin( x ) )\" )" );
 	ok( react.leak( "no partOf", "sin( asin( x ) )" ) === x, "react( \"sin( asin( x ) )\" )" );
@@ -226,11 +227,12 @@ test( "trigonometric functions and exp/log: variables (all behave the same)", fu
 test( "projection functions: variables (all behave the same)", function() {
 	round = react( "round" );
 	
-	ok( equivArr( react.leak( "no partOf", "round( x )" )._value, [ "(", round, x ] ), "react( \"round( x )\" )" );
-	ok( objContent( react.leak( "no partOf", "round( x )" )._dep, [ x ] ), "react( \"round( x )\" )._dep" );
+	strictEqual( react.leak( "no partOf", "round( x )" )._value._func, round , "react( \"round( x )\" )._value._func" );
+	ok( equivArr( react.leak( "no partOf", "round( x )" )._value._args, [ x ] ), "react( \"round( x )\" )._value._args" );
 	
-	ok( equivArr( react.leak( "no partOf", "round( round( x ) )" )._value, [ "(", round, x ] ), "react( \"round( round( x ) )\" )" );
-	ok( objContent( react.leak( "no partOf", "round( round( x ) )" )._dep, [ x ] ), "react( \"round( round( x ) )\" )._dep" );
+	strictEqual( react.leak( "no partOf", "round( round( x ) )" )._value._func, round , "react( \"round( round( x ) )\" )._value._func" );
+	strictEqual( react.leak( "no partOf", "round( round( x ) )" )._value._args[ 0 ]._func, round, "react( \"round( round( x ) )\" )._value._args[ 0 ]._func" );
+	ok( equivArr( react.leak( "no partOf", "round( round( x ) )" )._value._args[ 0 ]._args, [ x ] ), "react( \"round( round( x ) )\" )._value._args[ 0 ]._args" );
 } );
 
 
@@ -2138,9 +2140,10 @@ test( "call w/o return value: function is variable, argument is literal", functi
 	
 	ok( isEmptyObj( func._partOf ), "isEmptyObj( func._partOf )" );
 	call = react.leak( "func( 100 )" );
-	ok( equivArr( call._value, [ "(", func, 100 ] ), "react( func, \"( 100 )\" )" )
-	ok( objContent( call._dep, [ func ] ), "react.leak( func, \"( 100 )\" )._dep" );
-	ok( "#f" + call._guid in func._partOf, "\"#f\" + call._guid in func._partOf" );
+	
+	ok( call._value._func === func , "react( \"func( 100 )\" )._value._func === func" );
+	ok( equivArr( call._value._args, [ 100 ] ), "react( \"func( 100 )\" )._value._args" );
+	ok( "#f" + call._value._guid in func._partOf, "\"#f\" + call._value._guid in func._partOf" );
 	
 	strictEqual( foo, 100, "foo" );
 	
@@ -2155,7 +2158,7 @@ test( "call w/o return value: function is variable, argument is literal", functi
 	
 	strictEqual( foo, 150, "foo" );
 	
-	react( "delete func" );
+	react( "delete ", call, "; delete func" );
 } );
 
 test( "call w/o return value: function is valueArray, argument is literal", function() {
@@ -2173,8 +2176,8 @@ test( "call w/o return value: function is valueArray, argument is literal", func
 	ok( func2, "func2 = function( arg ) { foo = arg + 50; }" );
 	ok( bool,  "react( \"bool = true\" )" );
 	
-	ok( equivArr( call._value, [ "(", [ "?", bool, [ ":", func1, func2 ] ], 100 ] ), "react( \"( bool ?\", func1, \":\", func2, \")( 100 )\" )" );
-	ok( objContent( call._dep, [ bool ] ), "react.leak( \"( bool ?\", func1, \":\", func2, \")( 100 )\" )._dep" );
+	ok( equivArr( call._value._func, [ "?", bool, [ ":", func1, func2 ] ] ), "react( \"( bool ?\", func1, \":\", func2, \")( 100 )\" )._value._func" );
+	ok( equivArr( call._value._args, [ 100 ] ), "react( \"( bool ?\", func1, \":\", func2, \")( 100 )\" )._value._args" );
 	
 	strictEqual( foo, 100, "foo" );
 	
@@ -2188,7 +2191,7 @@ test( "call w/o return value: function is valueArray, argument is literal", func
 	
 	strictEqual( foo, 150, "foo" );
 	
-	react( "delete bool" );
+	react( "delete ", call, "; delete bool" );
 } );
 
 test( "call w/o return value: function is object method with variable property, argument is literal", function() {
@@ -2208,8 +2211,8 @@ test( "call w/o return value: function is object method with variable property, 
 	ok( obj.method2, "obj.method2 = function( arg ) { foo = arg + 50; }" );
 	ok( prop,  "react( \"prop = 'method1'\" )" );
 	
-	ok( equivArr( call._value, [ "(", [ ".", obj, prop ], 100 ] ), "react( obj, \"[ prop ]( 100 )\" )" );
-	ok( objContent( call._dep, [ prop ] ), "react.leak( obj, \"[ prop ]( 100 )\" )._dep" );
+	ok( equivArr( call._value._func, [ ".", obj, prop ] ), "react( obj, \"[ prop ]( 100 )\" )._value._func" );
+	ok( equivArr( call._value._args, [ 100 ] ), "react( obj, \"[ prop ]( 100 )\" )._value._args" );
 	
 	strictEqual( foo, 100, "foo" );
 	
@@ -2223,7 +2226,7 @@ test( "call w/o return value: function is object method with variable property, 
 	
 	strictEqual( foo, 150, "foo" );
 	
-	react( "delete prop" );
+	react( "delete ", call, "; delete prop" );
 } );
 
 test( "call w/o return value: function is object method with variable context, argument is literal", function() {
@@ -2245,8 +2248,8 @@ test( "call w/o return value: function is object method with variable context, a
 	ok( obj2.method, "obj2.method = function( arg ) { foo = arg + 50; }" );
 	ok( ctxt,  "react( \"ctxt = \", obj1 )" );
 	
-	ok( equivArr( call._value, [ "(", [ ".", ctxt, 'method' ], 100 ] ), "react( \"ctxt.method( 100 )\" )" );
-	ok( objContent( call._dep, [ ctxt ] ), "react.leak( \"ctxt.method( 100 )\" )._dep" );
+	ok( equivArr( call._value._func, [ ".", ctxt, 'method' ] ), "react( \"ctxt.method( 100 )\" )._value._func" );
+	ok( equivArr( call._value._args, [ 100 ] ), "react( \"ctxt.method( 100 )\" )._value._args" );
 	
 	strictEqual( foo, 100, "foo" );
 	
@@ -2260,7 +2263,7 @@ test( "call w/o return value: function is object method with variable context, a
 	
 	strictEqual( foo, 150, "foo" );
 	
-	react( "delete ctxt" );
+	react( "delete ", call, "; delete ctxt" );
 } );
 
 test( "call w/o return value: function is literal, argument is variable", function() {
@@ -2274,8 +2277,8 @@ test( "call w/o return value: function is literal, argument is variable", functi
 	ok( func, "func = function( arg1 ) { foo = arg1; }" );
 	ok( arg1, "react( \"arg1 = 50\" )" );
 	
-	ok( equivArr( call._value, [ "(", func, arg1 ] ), "react( func, \"( arg1 )\" )" )
-	ok( objContent( call._dep, [ arg1 ] ), "react.leak( func, \"( arg1 )\" )._dep" );
+	ok( call._value._func === func, "react( func, \"( arg1 )\" )._value._func" );
+	ok( equivArr( call._value._args, [ arg1 ] ), "react( func, \"( arg1 )\" )._value._args" );
 	
 	strictEqual( foo, 50, "foo" );
 	
@@ -2288,7 +2291,7 @@ test( "call w/o return value: function is literal, argument is variable", functi
 	
 	strictEqual( foo, "bar", "foo" );
 	
-	react( "delete arg1" );
+	react( "delete ", call, "; delete arg1" );
 } ); 
 
 test( "call w/o return value: function is literal, argument is valueArray", function() {
@@ -2303,8 +2306,8 @@ test( "call w/o return value: function is literal, argument is valueArray", func
 	ok( func, "func = function( arg1 ) { foo = arg1; }" );
 	ok( r, "react( \"r = 50\" )" );
 	
-	ok( equivArr( call._value, [ "(", func, [ "+", r, x ] ] ), "react( func, \"( r+x )\" )" )
-	ok( objContent( call._dep, [ r, x ] ), "react.leak( func, \"( r+x )\" )._dep" );
+	ok( call._value._func === func, "react( func, \"( r+x )\" )._value._func" );
+	ok( equivArr( call._value._args, [ [ "+", r, x ] ] ), "react( func, \"( r+x )\" )._value._args" );
 	
 	strictEqual( foo, r.valueOf() + x.valueOf(), "foo" );
 	
@@ -2318,7 +2321,7 @@ test( "call w/o return value: function is literal, argument is valueArray", func
 	
 	strictEqual( foo, rpx, "foo" );
 	
-	react( "delete r" );
+	react( "delete ", call, "; delete r" );
 } ); 
 
 test( "call w/o return value: function is literal, arguments are variable/literal", function() {
@@ -2332,8 +2335,8 @@ test( "call w/o return value: function is literal, arguments are variable/litera
 	ok( func, "func = function( arg1, arg2 ) { foo = arg1 + arg2; }" );
 	ok( arg1, "react( \"arg1 = 50\" )" );
 	
-	ok( equivArr( call._value, [ "(", func, [ ",", arg1, 100 ] ] ), "react( func, \"( arg1, 100 )\" )" )
-	ok( objContent( call._dep, [ arg1 ] ), "react.leak( func, \"( arg1, 100 )\" )._dep" );
+	ok( call._value._func === func, "react( func, \"( arg1, 100 )\" )._value._func" );
+	ok( equivArr( call._value._args, [ arg1, 100 ] ), "react( func, \"( arg1, 100 )\" )._value._args" );
 	
 	strictEqual( foo, 150, "foo" );
 	
@@ -2346,7 +2349,7 @@ test( "call w/o return value: function is literal, arguments are variable/litera
 	
 	strictEqual( foo, "bar100", "foo" );
 	
-	react( "delete arg1" );
+	react( "delete ", call, "; delete arg1" );
 } );
 
 test( "registering :() and deregistering ~() call", function() {
@@ -2370,9 +2373,9 @@ test( "registering :() and deregistering ~() call", function() {
 	call2 = react.leak( r1_func2, ":(", r1, ");" );
 	call3 = react.leak( r1_func3, ":(", r1, ");" );
 	
-	ok( r1._partOf[ "#f" + call1._guid ]._func === r1_func1 &&
-		r1._partOf[ "#f" + call2._guid ]._func === r1_func2 &&
-		r1._partOf[ "#f" + call3._guid ]._func === r1_func3,
+	ok( r1._partOf[ "#f" + call1._value._guid ]._func === r1_func1 &&
+		r1._partOf[ "#f" + call2._value._guid ]._func === r1_func2 &&
+		r1._partOf[ "#f" + call3._value._guid ]._func === r1_func3,
 		"r1 has been registered to the functions" );
 	
 	strictEqual( r1_func1_val, undefined, "r1_func1_val is undefined." );
@@ -2390,9 +2393,9 @@ test( "registering :() and deregistering ~() call", function() {
 	
 	ok( isEmptyObj( r1._partOf ), "All r1 has been unregistered from all functions." );
 	
-	react( "delete", r1 );
+	react( "delete ", call1, "; delete ", call2, "; delete ", call3, "; delete", r1 );
 } );
-/*
+
 test( "call w/ return value: return value used, but not in an assignment", function() {
 	var sqrFunc = function( x ) { return xSqr = x.valueOf()*x.valueOf() },
 		xSqr,
@@ -2400,15 +2403,16 @@ test( "call w/ return value: return value used, but not in an assignment", funct
 	
 	ok( sqrFunc, "sqrFunc = function( x ) { return x.valueOf()*x.valueOf() }" );
 	ok( sqr, "react( \"sqr = \", sqrFunc );" );
-	debugger;
-	strictEqual( react( "sqr( x ) + sqr( 10 );" ), 100 + x.valueOf()*x.valueOf(), "react( \"sqr( x ) + sqr( 10 );\" )" );
-	ok( isEmptyObj( sqr._partOf ), "isEmptyObj( sqr._partOf )" );
-	ok( isEmptyObj( x._partOf ), "isEmptyObj( x._partOf )" );
 	
-	strictEqual( react( "sqr( x ); sqr( 10 )" ), 100, "react( \"sqr( x ); sqr( 10 )\" )" );
+	strictEqual( react( "sqr( x ) + sqr( 10 );" ), 100 + x.valueOf()*x.valueOf(), "react( \"sqr( x ) + sqr( 10 );\" )" );
 	strictEqual( countProps( sqr._partOf ), 2, "countProps( sqr._partOf )" );
 	strictEqual( countProps( x._partOf ), 1, "countProps( x._partOf )" );
 	
+	strictEqual( react( "sqr( x ); sqr( 10 )" ), 100, "react( \"sqr( x ); sqr( 10 )\" )" );
+	strictEqual( countProps( sqr._partOf ), 4, "countProps( sqr._partOf )" );
+	strictEqual( countProps( x._partOf ), 2, "countProps( x._partOf )" );
+	
+	ok( react( "sqr~( x ); sqr~( 10 )" ), "react( \"sqr~( x ); sqr~( 10 )\" )" );
 	ok( react( "sqr~( x ); sqr~( 10 )" ), "react( \"sqr~( x ); sqr~( 10 )\" )" );
 	ok( isEmptyObj( sqr._partOf ), "isEmptyObj( sqr._partOf )" );
 	ok( isEmptyObj( x._partOf ), "isEmptyObj( x._partOf )" );
@@ -2425,28 +2429,34 @@ test( "call w/ return value: return value stored in a variable", function() {
 	ok( sqrFunc, "sqrFunc = function( x ) { return xSqr = x.valueOf()*x.valueOf() }" );
 	ok( sqr, "react( \"sqr = \", sqrFunc );" );
 	
-	ok( equivArr( react.leak( "rea = ", sqrFunc, "( x )" )._value, [ "(", sqrFunc, x ] ), "react( \"rea = \", sqrFunc, \"( x )\" )" );
-	//ok( objContent( rea._dep, [ x ] ), "react.leak( \"rea = \", sqrFunc, \"( x )\" )._dep" );
+	react( "rea = ", sqrFunc, "( x )" );
+	ok( rea._value._func === sqrFunc, "react( \"rea = \", sqrFunc, \"( x )\" )._value._func" );
+	ok( equivArr( rea._value._args, [ x ] ), "react( \"rea = \", sqrFunc, \"( x )\" )._value._args" );
 	strictEqual( countProps( x._partOf ), 1, "countProps( x._partOf )" );
 	strictEqual( xSqr, x.valueOf()*x.valueOf(), "xSqr" );
 	strictEqual( react( "rea" ), x.valueOf()*x.valueOf(), "react( \"rea\" )" );
 	
-	ok( equivArr( react.leak( "rea = sqr(", 10, ")" )._value, [ "(", sqr, 10 ] ), "react( \"rea = sqr(\", 10, \")\" )" );
+	react( "rea = sqr(", 10, ")" );
+	ok( rea._value._func === sqr, "react( \"rea = sqr(\", 10, \")\" )._value._func" );
+	ok( equivArr( rea._value._args, [ 10 ] ), "react( \"rea = sqr(\", 10, \")\" )._value._args" );
+	debugger;
 	ok( isEmptyObj( x._partOf ), "isEmptyObj( x._partOf )" );
-	//ok( objContent( rea._dep, [ sqr ] ), "react.leak( \"rea = sqr(\", 10, \")\" )._dep" );
 	strictEqual( countProps( sqr._partOf ), 1, "countProps( sqr._partOf )" );
 	strictEqual( xSqr, 100, "xSqr" );
 	strictEqual( react( "rea" ), 100, "react( \"rea\" )" );
 	
-	ok( equivArr( react.leak( "rea = sqr( x )" )._value, [ "(", sqr, x ] ), "react( \"rea = sqr( x )\" )" );
-	//ok( objContent( rea._dep, [ sqr, x ] ), "react.leak( \"rea = sqr( x )\" )._dep" );
+	react( "rea = sqr( x )" );
+	ok( rea._value._func === sqr, "react( \"rea = sqr( x )\" )._value._func" );
+	ok( equivArr( rea._value._args, [ x ] ), "react( \"rea = sqr( x )\" )._value._args" );
+	debugger;
 	strictEqual( countProps( sqr._partOf ), 1, "countProps( sqr._partOf )" );
 	strictEqual( countProps( x._partOf ), 1, "countProps( x._partOf )" );
 	strictEqual( xSqr, x.valueOf()*x.valueOf(), "xSqr" );
 	strictEqual( react( "rea" ), x.valueOf()*x.valueOf(), "react( \"rea\" )" );
 	debugger;
-	ok( equivArr( react.leak( "rea += sqr(", 10, ")" )._value, [ "+", [ "(", sqr, x ], [ "(", sqr, 10 ] ] ), "react( \"rea += sqr(\", 10, \")\" )" );
-	//ok( objContent( rea._dep, [ sqr, x ] ), "react.leak( \"rea = sqr(\", 10, \")\" )._dep" );
+	react( "rea += sqr(", 10, ")" );
+	ok( rea._value[ 2 ]._func === sqr, "react( \"rea += sqr(\", 10, \")\" )._value[ 2 ]._func" );
+	ok( equivArr( rea._value[ 2 ]._args, [ x ] ), "react( \"rea += sqr(\", 10, \")\" )._value[ 2 ]._args" );
 	strictEqual( countProps( sqr._partOf ), 2, "countProps( sqr._partOf )" );
 	strictEqual( countProps( x._partOf ), 1, "countProps( x._partOf )" );
 	strictEqual( xSqr, 100 + x.valueOf()*x.valueOf(), "xSqr" );
@@ -2459,7 +2469,7 @@ test( "call w/ return value: return value stored in a variable", function() {
 	
 	react( "delete sqr" );
 } );
-*/
+
 /*
 module( "Objecthandling" );
 
