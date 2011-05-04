@@ -92,8 +92,31 @@
 			
 			var dontTrack = false;
 			
+			var doWithReactive = function( rea, f ) {
+				var depId;
+				
+				if ( !rea )
+					return true;
+				
+				if ( rea._isExprArray ) {
+					for ( depId in rea._dep ) {
+						if ( depId === "depObj" )
+							continue;
+						
+						if ( f.call( this, rea._dep[ depId ] ) === false )
+							return false;
+					}
+				
+				} else if ( rea._isVar && !rea._locked ) {
+					if ( f.call( this, rea ) === false )
+						return false;
+				}
+				
+				return true;
+			};
+			
 			//value array properties
-			var makeValArray = ( function() {
+			var makeExprArray = ( function() {
 					var valueOf = function() {
 							try {
 								var op = this[ 0 ],
@@ -110,7 +133,7 @@
 								idx = this.length;
 								if ( idx === 2 ) {
 									//unary
-									if ( this[ 1 ]._isVar || this[ 1 ]._isValArray || this[ idx ]._isCtxtArray )
+									if ( this[ 1 ]._isVar || this[ 1 ]._isExprArray )
 										cur = this[ 1 ].valueOf.apply( this[ 1 ], context );
 									else
 										cur = this[ 1 ];
@@ -120,7 +143,7 @@
 								
 								//binary with two or more operands
 								while( idx--, idx > 0 ) {
-									if ( this[ idx ]._isVar || this[ idx ]._isValArray || this[ idx ]._isCtxtArray )
+									if ( this[ idx ]._isVar || this[ idx ]._isExprArray  )
 										cur = this[ idx ].valueOf.apply( this[ idx ], context );
 									else
 										cur = this[ idx ];
@@ -143,7 +166,7 @@
 									if ( !this[ idx ] ) {
 										str += this[ idx ];
 									
-									} else if ( this[ idx ]._isValArray ) {
+									} else if ( this[ idx ]._isExprArray ) {
 										//replace + with - in case of negative number and summation
 										if ( op === "+" && this[ idx ][ 0 ] === "*" && this[ idx ][ 1 ] < 0 ) {
 											str = str.slice( 0, -op.length );
@@ -213,7 +236,7 @@
 								
 								if ( this.length === 2 ) {
 									//unary
-									if ( this[ 1 ]._isVar || this[ 1 ]._isValArray )
+									if ( this[ 1 ]._isVar || this[ 1 ]._isExprArray )
 										cur = this[ 1 ]._prevValueOf.apply( this[ 1 ], arguments );
 									else
 										cur = this[ 1 ];
@@ -223,7 +246,7 @@
 								
 								//binary with two or more operands
 								for ( var idx = this.length-1; idx > 0; idx-- ) {
-									if ( this[ idx ]._isVar || this[ idx ]._isValArray  )
+									if ( this[ idx ]._isVar || this[ idx ]._isExprArray  )
 										cur = this[ idx ]._prevValueOf.apply( this[ idx ], arguments );
 									else
 										cur = this[ idx ];
@@ -322,13 +345,13 @@
 							
 							return ret;
 						},
-						makeVar = function() {
+						_makeVar = function() {
 							delete this._checkDep;
 							delete this.addDep;
-							delete this.makeVar;
+							delete this._makeVar;
 							delete this.makeCtxtArray;
 						},
-						_inCtxt = function( ctxt ) {
+						inCtxt = function( ctxt ) {
 							delete this._isValArray;
 							this._isCtxtArray = true;
 							this._context = ctxt;
@@ -342,10 +365,11 @@
 						arr.toString     = toString;
 						arr._prevValueOf = _prevValueOf;
 						
-						arr.makeVar		 = makeVar;
-						arr._inCtxt       = _inCtxt;
+						arr._makeVar		 = _makeVar;
+						arr.inCtxt       = inCtxt;
 						
 						arr._isValArray  = true;
+						arr._isExprArray = true;
 						arr._dep		 = arr._dep || null;
 						arr._checkDep 	 = _checkDep;
 						arr.addDep		 = addDep;
@@ -518,7 +542,7 @@
 												
 												if ( operand && operand._isValArray ) {
 													//reactive value arrays are referenced externally, copy them
-													operand = makeValArray( operand.slice( 0 ), operand._dep );
+													operand = makeExprArray( operand.slice( 0 ), operand._dep );
 													type = "arr";
 												} else {
 													type = !operand || type === "number" || type === "string" || type === "boolean" ? 
@@ -562,14 +586,14 @@
 												typeL = typeof left;
 												if ( left && left._isValArray ) {
 													//reactive value arrays are referenced externally, copy them
-													left = makeValArray( left.slice( 0 ), left._dep );
+													left = makeExprArray( left.slice( 0 ), left._dep );
 													typeL = "arr";
 												} else {
 													typeL = !left ? 
 																"lit" :
 															left._isValArray ?
 																"arr" :
-															left._key  || ( left._value && left._value._isValArray ) ?
+															left._key || left._isCtxtArray || ( left._value && left._value._isValArray ) ?
 																"ref" :
 																"lit";
 												}
@@ -577,14 +601,14 @@
 												typeR = typeof right;
 												if ( right && right._isValArray ) {
 													//reactive value arrays are referenced externally, copy them
-													right = makeValArray( right.slice( 0 ), right._dep );
+													right = makeExprArray( right.slice( 0 ), right._dep );
 													typeR = "arr";
 												} else {
 													typeR = !right ? 
 																"lit" :
 															right._isValArray ?
 																"arr" :
-															right._key || ( right._value && right._value._isValArray ) ?
+															right._key || right._isCtxtArray || ( right._value && right._value._isValArray ) ?
 																"ref" :
 																"lit";
 												}
@@ -656,7 +680,7 @@
 			operator( ",", "infix", 5, null, ( function() {
 					var ret = {},
 						func = function( left, right ) {
-							return makeValArray(
+							return makeExprArray(
 								[ ",", left, right ],
 								left,
 								right && right._isValArray ? right._dep : right
@@ -670,7 +694,7 @@
 								return right;
 							}
 							
-							return makeValArray(
+							return makeExprArray(
 								[ ",", left, right ],
 								left._dep,
 								right && right._isValArray ? right._dep : right
@@ -696,7 +720,7 @@
 								return right;
 							}
 							
-							return makeValArray(
+							return makeExprArray(
 								[ ",", left, right ],
 								left._dep,
 								right && right._isValArray ? right._dep : right
@@ -755,7 +779,7 @@
 						reactProp;
 					
 					//test for reactive value and make it literal
-					if ( val && ( val._isVar || val._isValArray ) )
+					if ( val && ( val._isVar || val._isExprArray ) )
 						val = val.valueOf();
 					
 					if ( rev ) {
@@ -895,30 +919,16 @@
 						};
 						
 						this.push( pathObj );
-						
-						for ( var key in path._dep ) {
-							if ( key === "depObj" )
-								continue;
-							
-							path._dep[ key ]._bind( updateProp, [ path ] );
-						}
 					
 					} else {
 						//path is known
 						pathObj = this[ i ];
 						
 						//unbind value handlers
-						if ( pathObj.val && ( pathObj.val._isVar || pathObj.val._isValArray ) ) {
-							if ( pathObj.val._isVar )
-								val._unbind( updateProp, [ path ] );
-							else
-								for ( var key in pathObj.val._dep ) {
-									if ( key === "depObj" )
-										continue;
-									
-									pathObj.val._dep[ key ]._unbind( updateProp, [ path ] );
-								}
-						}
+						if ( pathObj.val && ( pathObj.val._isVar || pathObj.val._isExprArray ) )
+							FunctionCall.prototype.remove( updateProp, [ pathObj.path, pathObj.val ] );
+						else
+							FunctionCall.prototype.remove( updateProp, [ path ] );
 						
 						//update values
 						pathObj.val = val;
@@ -927,18 +937,10 @@
 					}
 					
 					//check, if new value is reactive
-					if ( val ) {
-						if ( val._isVar )
-							val._bind( updateProp, [ path ] );
-						
-						else if ( val._isValArray )
-							for ( var key in val._dep ) {
-								if ( key === "depObj" )
-									continue;
-								
-								val._dep[ key ]._bind( updateProp, [ path ] );
-							}
-					}
+					if ( val && ( val._isVar || val._isExprArray ) )
+						FunctionCall( updateProp, [ path, val ] );
+					else
+						FunctionCall( updateProp, [ path ] );
 					
 					return pathObj;
 				};
@@ -951,27 +953,10 @@
 						if ( equiv( path, this[ i ].path ) ) {
 							var pathObj = this[ i ];
 							
-							//unbind path handlers
-							for ( key in pathObj.path._dep ) {
-								if ( key === "depObj" )
-									continue;
-								
-								pathObj.path._dep[ key ]._unbind( updateProp, [ pathObj.path ] );
-							}
-							
-							//unbind value handlers
-							if ( pathObj.val ) {
-								if ( pathObj.val._isVar )
-									pathObj.val._unbind( updateProp, [ pathObj.path ] );
-									
-								else if ( pathObj.val._isValArray )
-									for ( key in pathObj.val._dep ) {
-										if ( key === "depObj" )
-											continue;
-										
-										pathObj.val._dep[ key ]._unbind( updateProp, [ pathObj.path ] );
-									}
-							}
+							if ( pathObj.val && ( pathObj.val._isVar || pathObj.val._isExprArray ) )
+								FunctionCall.prototype.remove( updateProp, [ pathObj.path, pathObj.val ] );
+							else
+								FunctionCall.prototype.remove( updateProp, [ path ] );
 							
 							this.splice( i, 1 );
 							
@@ -993,7 +978,7 @@
 					//test literal object property path
 					var i = v.length || 1;
 					while( --i ) {
-						if ( v[ i ] && ( v[ i ]._isVar || v[ i ]._isValArray ) )
+						if ( v[ i ] && ( v[ i ]._isVar || v[ i ]._isExprArray ) )
 							break;
 					}
 					
@@ -1001,7 +986,7 @@
 						reactPaths.set( v, val, false, false );
 					
 					//test for reactive value
-					if ( val && ( val._isVar || val._isValArray ) ) {
+					if ( val && ( val._isVar || val._isExprArray ) ) {
 						if ( !i )
 							reactPaths.set( v, val, false, false );
 						
@@ -1132,12 +1117,12 @@
 					
 					ret.ref = {};
 					ret.ref.arr = function( cond, choice ) {
-						return makeValArray( [ "?", cond, choice ], cond, choice._dep );
+						return makeExprArray( [ "?", cond, choice ], cond, choice._dep );
 					};
 					
 					ret.arr = {};
 					ret.arr.arr = function( cond, choice ) {
-						return makeValArray( [ "?", cond, choice ], cond._dep, choice._dep );
+						return makeExprArray( [ "?", cond, choice ], cond._dep, choice._dep );
 					};
 					
 					return ret;
@@ -1149,35 +1134,35 @@
 					
 					ret.lit = {};
 					ret.lit.lit = function( onTrue, onFalse ) {
-						return makeValArray( [ ":", onTrue, onFalse ] );
+						return makeExprArray( [ ":", onTrue, onFalse ] );
 					};
 					ret.lit.ref = function( onTrue, onFalse ) {
-						return makeValArray( [ ":", onTrue, onFalse ], onFalse );
+						return makeExprArray( [ ":", onTrue, onFalse ], onFalse );
 					};
 					ret.lit.arr = function( onTrue, onFalse ) {
-						return makeValArray( [ ":", onTrue, onFalse ], onFalse._dep );
+						return makeExprArray( [ ":", onTrue, onFalse ], onFalse._dep );
 					};
 					
 					ret.ref = {};
 					ret.ref.lit = function( onTrue, onFalse ) {
-						return makeValArray( [ ":", onTrue, onFalse ], onTrue );
+						return makeExprArray( [ ":", onTrue, onFalse ], onTrue );
 					};
 					ret.ref.ref = function( onTrue, onFalse ) {
-						return makeValArray( [ ":", onTrue, onFalse ], onTrue, onFalse );
+						return makeExprArray( [ ":", onTrue, onFalse ], onTrue, onFalse );
 					};
 					ret.ref.arr = function( onTrue, onFalse ) {
-						return makeValArray( [ ":", onTrue, onFalse ], onTrue, onFalse._dep );
+						return makeExprArray( [ ":", onTrue, onFalse ], onTrue, onFalse._dep );
 					};
 					
 					ret.arr = {};
 					ret.arr.lit = function( onTrue, onFalse ) {
-						return makeValArray( [ ":", onTrue, onFalse ], onTrue._dep );
+						return makeExprArray( [ ":", onTrue, onFalse ], onTrue._dep );
 					};
 					ret.arr.ref = function( onTrue, onFalse ) {
-						return makeValArray( [ ":", onTrue, onFalse ], onTrue._dep, onFalse );
+						return makeExprArray( [ ":", onTrue, onFalse ], onTrue._dep, onFalse );
 					};
 					ret.arr.arr = function( onTrue, onFalse ) {
-						return makeValArray( [ ":", onTrue, onFalse ], onTrue._dep, onFalse._dep );
+						return makeExprArray( [ ":", onTrue, onFalse ], onTrue._dep, onFalse._dep );
 					};
 					
 					return ret;
@@ -1195,13 +1180,13 @@
 							if ( left )
 								return left;
 							
-							return makeValArray( [ op, left, right ], right );
+							return makeExprArray( [ op, left, right ], right );
 						},
 						litarr : function( left, right ) {
 							if ( left )
 								return left;
 							
-							return makeValArray( [ op, left, right ], right );
+							return makeExprArray( [ op, left, right ], right );
 						}
 					},
 					"&&" : {
@@ -1216,7 +1201,7 @@
 						var ret = {},
 							
 							compare = function( left, right ) {
-								return makeValArray( [ op, left, right ], left, right );
+								return makeExprArray( [ op, left, right ], left, right );
 							},
 							
 							compareArr = function( left, right ) {
@@ -1243,10 +1228,10 @@
 									
 									return right;
 								} else {
-									return makeValArray(
+									return makeExprArray(
 										[ op, left, right ],
-										left._isValArray ? left._dep : left,
-										right._isValArray ? right._dep : right._dep
+										left._isExprArray ? left._dep : left,
+										right._isExprArray ? right._dep : right._dep
 									);
 								}
 							};
@@ -1302,16 +1287,16 @@
 						var ret = {},
 							
 							refref = function( left, right ) {
-								return makeValArray( [ op, left, right ], left, right );
+								return makeExprArray( [ op, left, right ], left, right );
 							},
 							refarr = function( left, right ) {
-								return makeValArray( [ op, left, right ], left, right._dep );
+								return makeExprArray( [ op, left, right ], left, right._dep );
 							},
 							arrref = function( left, right ) {
-								return makeValArray( [ op, left, right ], left._dep, right );
+								return makeExprArray( [ op, left, right ], left._dep, right );
 							},
 							arrarr = function( left, right ) {
-								return makeValArray( [ op, left, right ], left._dep, right._dep );
+								return makeExprArray( [ op, left, right ], left._dep, right._dep );
 							},
 						
 							compare = {
@@ -1367,10 +1352,10 @@
 						var ret = {},
 							
 							func = function( left, right ) {
-								return makeValArray(
+								return makeExprArray(
 									[ op, left, right ],
-									left._isValArray ? left._dep : left,
-									right._isValArray ? right._dep : right
+									left._isExprArray ? left._dep : left,
+									right._isExprArray ? right._dep : right
 								);
 							};
 						
@@ -1419,7 +1404,7 @@
 							} else if ( typeof exp1 === "number" && typeof exp2 === "number" &&
 										( ( exp1 < 0 && exp2 < 0 ) || ( exp1 > 0 && exp2 > 0 ) ) ) {
 								var tmp = Math.abs( exp1 ) < Math.abs( exp2 ) ? exp1 : exp2;
-								shared = tmp === 1 ? base1 : makeValArray( [ "^", base1, tmp ], base1._isValArray ? base1._dep : base1 );
+								shared = tmp === 1 ? base1 : makeExprArray( [ "^", base1, tmp ], base1._isExprArray ? base1._dep : base1 );
 								tmp = operators[ "^" ].ledEval.call( this, shared, -1 );
 								fst = operators[ "*" ].ledEval.call( this, fst, tmp );
 								snd = operators[ "*" ].ledEval.call( this, snd, tmp );
@@ -1469,10 +1454,10 @@
 								
 								} else {
 									if ( !shared[ dir ]._isValArray )
-										shared[ dir ] = makeValArray( [ "*", shared[ dir ] ], shared[ dir ] );
+										shared[ dir ] = makeExprArray( [ "*", shared[ dir ] ], shared[ dir ] );
 									
 									shared[ dir ].push( res.shared );
-									shared[ dir ].addDep( res.shared._isValArray ? res.shared._dep : res.shared );
+									shared[ dir ].addDep( res.shared._isExprArray ? res.shared._dep : res.shared );
 								}
 								
 								//reorganize fst/snd
@@ -1632,11 +1617,11 @@
 												fst_sel.addDep( res.front, sum )
 											
 											} else {
-												fst_sel = makeValArray(
+												fst_sel = makeExprArray(
 													[ "*", sum._isValArray ? res.front : sum, sum._isValArray ? sum : res.front, res.back ],
-													res.front._isValArray ? res.front._dep : res.front,
-													sum._isValArray 	  ? sum._dep : sum,
-													res.back._isValArray  ? res.back._dep : res.back
+													res.front._isExprArray ? res.front._dep : res.front,
+													sum._isExprArray 	  ? sum._dep : sum,
+													res.back._isExprArray  ? res.back._dep : res.back
 												);
 											}
 										
@@ -1666,10 +1651,10 @@
 												fst_sel.addDep( res.front )
 											
 											} else {
-												fst_sel = makeValArray(
+												fst_sel = makeExprArray(
 													[ "*", sum._isValArray ? res.front : sum, sum._isValArray ? sum : res.front ],
-													res.front._isValArray ? res.front._dep : res.front,
-													sum._isValArray 	  ? sum._dep : sum
+													res.front._isExprArray ? res.front._dep : res.front,
+													sum._isExprArray 	  ? sum._dep : sum
 												);
 											}
 										
@@ -1695,10 +1680,10 @@
 												fst_sel.addDep( sum )
 											
 											} else {
-												fst_sel = makeValArray(
+												fst_sel = makeExprArray(
 													[ "*", sum, res.back ],
-													sum._isValArray 	 ? sum._dep : sum,
-													res.back._isValArray ? res.back._dep : res.back
+													sum._isExprArray 	 ? sum._dep : sum,
+													res.back._isExprArray ? res.back._dep : res.back
 												);
 											}
 										}
@@ -1716,14 +1701,14 @@
 							//fst does not share summand parts with snd_sel, so just append snd_sel
 							if ( fst_isOpArray ) {
 								fst.push( snd_sel );
-								fst.addDep( snd_sel._isValArray ? snd_sel._dep : snd_sel );
+								fst.addDep( snd_sel._isExprArray ? snd_sel._dep : snd_sel );
 								fst_len += 1;
 							
 							} else if ( fst !== 0 ){
-								fst = makeValArray(
+								fst = makeExprArray(
 									[ "+", fst, snd_sel ],
-									snd_sel._isValArray ? snd_sel._dep : snd_sel,
-									fst._isValArray     ? fst._dep     : fst
+									snd_sel._isExprArray ? snd_sel._dep : snd_sel,
+									fst._isExprArray     ? fst._dep     : fst
 								);
 								fst_isOpArray = true;
 								fst_len = 3;
@@ -1759,13 +1744,13 @@
 						if ( lit === Infinity || lit === -Infinity )
 							return lit;
 						
-						return makeValArray( swap ? [ "+", lit, ref ] : [ "+", ref, lit ], ref );
+						return makeExprArray( swap ? [ "+", lit, ref ] : [ "+", ref, lit ], ref );
 					},
 					ref : function( ref1, ref2 ) {
 						if ( ref1 === ref2 )
-							return makeValArray( [ "*", 2, ref1 ], ref1 );
+							return makeExprArray( [ "*", 2, ref1 ], ref1 );
 						
-						return makeValArray( [ "+", ref1, ref2 ], ref1, ref2 );
+						return makeExprArray( [ "+", ref1, ref2 ], ref1, ref2 );
 					},
 					arr : function( ref, arr, swap ) {
 						if ( typeof swap !== "boolean" )
@@ -1893,9 +1878,9 @@
 										fst_len += 1;
 									
 									} else {
-										fst = makeValArray(
+										fst = makeExprArray(
 											[ "*", snd_sel, fst ],
-											fst._isValArray     ? fst._dep     : fst
+											fst._isExprArray     ? fst._dep     : fst
 										);
 										fst_isOpArray = true;
 										fst_len = 3;
@@ -1938,14 +1923,14 @@
 									//fst does not share summand parts with snd_sel, so just append snd_sel
 									if ( fst_isOpArray ) {
 										fst.splice( fst_len, 0, snd_sel );
-										fst.addDep( snd_sel._isValArray ? snd_sel._dep : snd_sel );
+										fst.addDep( snd_sel._isExprArray ? snd_sel._dep : snd_sel );
 										fst_len += 1;
 									
 									} else if ( fst !== 1 ) {
-										fst = makeValArray(
+										fst = makeExprArray(
 											[ "*", fst, snd_sel ],
-											fst._isValArray     ? fst._dep     : fst,
-											snd_sel._isValArray ? snd_sel._dep : snd_sel
+											fst._isExprArray     ? fst._dep     : fst,
+											snd_sel._isExprArray ? snd_sel._dep : snd_sel
 										);
 										fst_isOpArray = true;
 										fst_len = 3;
@@ -1980,13 +1965,13 @@
 						if ( lit === 1 )
 							return ref;
 						
-						return makeValArray( [ "*", lit, ref ], ref );
+						return makeExprArray( [ "*", lit, ref ], ref );
 					},
 					ref : function( ref1, ref2 ) {
 						if ( ref1 === ref2 )
-							return makeValArray( [ "^", ref1, 2 ], ref1 );
+							return makeExprArray( [ "^", ref1, 2 ], ref1 );
 						
-						return makeValArray( [ "*", ref1, ref2 ], ref1, ref2 );
+						return makeExprArray( [ "*", ref1, ref2 ], ref1, ref2 );
 					},
 					arr : function( ref, arr, swap ) {
 						if ( typeof swap !== "boolean" )
@@ -2065,9 +2050,9 @@
 							return right;
 						}
 						
-						return makeValArray( [ "%", left, right ],
-							left  && left._isValArray  ? left._dep  : left,
-							right && right._isValArray ? right._dep : right
+						return makeExprArray( [ "%", left, right ],
+							left  && left._isExprArray  ? left._dep  : left,
+							right && right._isExprArray ? right._dep : right
 						);
 					};
 				
@@ -2103,23 +2088,23 @@
 						
 						if ( exp && exp._isValArray && exp[ 0 ] === "^" ) {
 							exp.splice( 1, 0, base );
-							exp.addDep( base._isValArray ? base._dep : base );
+							exp.addDep( base._isExprArray ? base._dep : base );
 							
 							return exp;
 						
 						} else if ( typeof exp === "number" && base && base._isValArray &&
 									base[ 0 ] === "^" && base.length === 3 &&
 									typeof base[ 2 ] === "number" ) {
-							base = makeValArray( base.slice(), base._dep );
+							base = makeExprArray( base.slice(), base._dep );
 							base[ 2 ] *= exp;
 							
 							return base;
 						}
 						
-						return makeValArray(
+						return makeExprArray(
 							[ "^", base, exp ],
-							base._isValArray ? base._dep : base,
-							exp._isValArray  ? exp._dep  : exp
+							base._isExprArray ? base._dep : base,
+							exp._isExprArray  ? exp._dep  : exp
 						);
 					};
 				
@@ -2143,14 +2128,14 @@
 				},
 				
 				ref : function( ref ) {
-					return makeValArray( [ "!", ref ], ref );
+					return makeExprArray( [ "!", ref ], ref );
 				},
 				
 				arr : function( arr ) {
 					if ( arr[ 0 ] === "!" && arr[ 1 ].constructor === Array && arr[ 1 ][ 0 ] === "!" )
 						return arr[ 1 ];
 					else
-						return makeValArray( [ "!", arr ], arr._dep );
+						return makeExprArray( [ "!", arr ], arr._dep );
 				}
 			} );
 			
@@ -2160,14 +2145,14 @@
 				},
 				
 				ref : function( ref ) {
-					return makeValArray( [ "+", ref ], ref );
+					return makeExprArray( [ "+", ref ], ref );
 				},
 				
 				arr : function( arr ) {
 					if ( arr && arr._isValArray && arr[ 0 ] === "+" && arr.length === 2 )
 						return arr;
 					
-					return makeValArray( [ "+", arr ], arr._dep );
+					return makeExprArray( [ "+", arr ], arr._dep );
 				}
 			} );
 			
@@ -2181,14 +2166,14 @@
 				},
 				
 				ref : function( ref ) {
-					return makeValArray( [ "typeof", ref ], ref );
+					return makeExprArray( [ "typeof", ref ], ref );
 				},
 				
 				arr : function( arr ) {
 					if ( arr && arr._isValArray && arr[ 0 ] === "typeof" )
 						return "string";
 					
-					return makeValArray( [ "typeof", arr ], arr._dep );
+					return makeExprArray( [ "typeof", arr ], arr._dep );
 				}
 			} );
 			
@@ -2203,7 +2188,7 @@
 					//check for literal object property path
 					var i = v.length || 1;
 					while( --i ) {
-						if ( v[ i ] && ( v[ i ]._isVar || v[ i ]._isValArray ) )
+						if ( v[ i ] && ( v[ i ]._isVar || v[ i ]._isExprArray ) )
 							break;
 					}
 					
@@ -2215,6 +2200,7 @@
 				
 				if ( v._isValArray )
 					return v[ "delete" ]();
+				
 				return interpreter.nameTable[ "delete" ]( v._key || v.value );
 			} );
 			
@@ -2274,27 +2260,27 @@
 				function( v, ctxt ) {
 					var idx;
 					
-					if ( !v._isVar && !v._isValArray )
-						error( "{ must be preceeded by a variable or value array!" );
+					if ( !v._isVar && !v._isExprArray )
+						error( "{ must be preceeded by a variable or expression!" );
 					
 					if ( ctxt && ctxt._isValArray && ctxt[ 0 ] === "," ) {
 						ctxt = ctxt.slice( 1 );
 						
 						idx = ctxt.length;
 						while( idx-- ) {
-							if ( ctxt[ idx ]._isValArray || ctxt[ idx ]._isCtxtArray )
+							if ( ctxt[ idx ]._isExprArray )
 								error( "context data must be a literal or variable!" );
 						}
 						
 					} else if ( ctxt !== undefined ) {
-						if ( ctxt._isValArray || ctxt._isCtxtArray )
+						if ( ctxt._isExprArray )
 							error( "context data must be a literal or variable!" );
 						
 						ctxt = [ ctxt ];
 					}
 					
 					if ( ctxt )
-						v = v._inCtxt( ctxt );
+						v = v._inCtx( ctxt );
 					
 					return v;
 				}
@@ -2310,7 +2296,7 @@
 							return args;
 					}
 					
-					return makeValArray( [ "(", func, args ], args._isValArray ? args._dep : args );
+					return makeExprArray( [ "(", func, args ], args._isExprArray ? args._dep : args );
 				};
 			
 			operator( "(", "call", 100, null, function( func, args ) {
@@ -2327,121 +2313,15 @@
 				//create arguments array to bind
 				if ( args && args._isValArray && args[ 0 ] === "," ) {
 					argsArr = args.slice( 1 );
-					argsArr._dep = args._dep;
+					delete argsArr._dep;
 					
 				} else {
-					argsArr = [ args ];
-					
-					if ( args )
-						argsArr._dep = args._isValArray ? args._dep : args;
+					argsArr = args !== undefined ? [ args ] : args;
 				}
 				
-				//get function and context literal
-				if ( !func ) {
-					funcLit = func;
-				
-				} else if ( func._isValArray ) {
-					funcLit = func.valueOf();
-					
-					if ( func._dep )
-						rea = makeValArray( [ "(", func ], func._dep );
-					
-					if ( func[ 0 ] === "." && func.length > 3 ) {
-						val = func[ func.length-1 ].pop();
-						ctxtLit = func.valueOf();
-						func.push( val );
-					
-					} else {
-						ctxtLit = func[ 1 ].valueOf();
-					}
-				
-				} else if ( func._isVar ) {
-					funcLit = func._value;
-					
-					if ( !func._locked )
-						rea = makeValArray( [ "(", func ], func );
-				
-				} else {
-					funcLit = func;
-				}
-				
-				//get argument literals
-				for ( var i = 0, l = argsArr.length; i<l; i++ ) {
-					if ( !argsArr[ i ] ) {
-						argLits.push( argsArr[ i ] );
-					
-					} else if ( argsArr[ i ]._isValArray ) {
-						for ( key in argsArr[ i ]._dep ) {
-							if ( key === "depObj" )
-								continue;
-							
-							varInArgs = true;
-							break;
-						}
-						
-						argLits.push( argsArr[ i ].valueOf() );
-					
-					} else if ( argsArr[ i ]._isVar ) {
-						if ( !argsArr[ i ]._locked )
-							varInArgs = true;
-						
-						argLits.push( argsArr[ i ].valueOf() );
-					
-					} else {
-						argLits.push( argsArr[ i ] );
-					}
-				}
-				
-				try {
-					val = funcLit.apply( ctxtLit, argLits );
-				} catch ( e ) {
-					error( "A reactive function call causes problems: " + e.message );
-				}
-				
-				//bind listening functions to reactive parts of this call
-				//if we want to track changes at all
-				//don't track, if:
-				// - tracking is explicitly turned of by dontTrack
-				// - the return value of this function is processed further (function is preceeded or followed by an operator)
-				// - the function acts as a constructor (only relevant, if the previous condition is not fulfilled)
-				if ( !dontTrack && !this.prevToken && !this.nextToken && !(val instanceof funcLit) ) {
-					if ( func ) {
-						if ( func._isValArray ) {
-							for ( key in func._dep ) {
-								if ( key === "depObj" )
-									continue;
-								
-								func._dep[ key ]._bind( func, argsArr, true );
-							}
-							
-						} else if ( func._isVar && !func._locked ) {
-							func._bind( func, argsArr, true );
-						}
-					}
-					
-					for ( var i = 0, l = argsArr.length; i<l; i++ ) {
-						if ( argsArr[ i ] ) {
-							if ( argsArr[ i ]._isValArray ) {
-								for ( key in argsArr[ i ]._dep ) {
-									if ( key === "depObj" )
-										continue;
-									
-									argsArr[ i ]._dep[ key ]._bind( func, argsArr, true );
-								}
-							
-							} else if ( argsArr[ i ]._isVar && !argsArr[ i ]._locked ) {
-								argsArr[ i ]._bind( func, argsArr, true );
-							}
-						}
-					}
-				}
-				
-				if ( rea )
-					rea.addDep( args && args._isValArray ? args._dep : args ).push( args );
-				else if ( varInArgs )
-					rea = arrFunc( funcLit, args );
-				
-				return rea || val;
+				var call = FunctionCall( func, argsArr, true );
+				call._call();
+				return call;
 			} );
 			
 			operator( ":(", "call", 100, null, function( func, args ) {
@@ -2453,69 +2333,13 @@
 				//create arguments array to bind
 				if ( args && args._isValArray && args[ 0 ] === "," ) {
 					argsArr = args.slice( 1 );
-					argsArr._dep = args._dep;
+					delete argsArr._dep;
 					
 				} else {
-					argsArr = [ args ];
-					
-					if ( args )
-						argsArr._dep = args._isValArray ? args._dep : args;
+					argsArr = args !== undefined ? [ args ] : args;
 				}
 				
-				//handle function part
-				if ( func ) {
-					if ( func._isValArray ) {
-						if ( !dontTrack )
-							for ( var key in func._dep ) {
-								if ( key === "depObj" )
-									continue;
-								
-								func._dep[ key ]._bind( func, argsArr, true );
-							}
-						
-						rea = makeValArray( [ "(", func ], func._dep );
-					
-					} else if ( func._isVar ) {
-						if ( !func._locked ) {
-							if ( !dontTrack )
-								func._bind( func, argsArr, true );
-							
-							rea = makeValArray( [ "(", func ], func );
-						}
-					}
-				}
-				
-				//handle arguments part
-				for ( var i = 0, l = argsArr.length; i<l; i++ ) {
-					if ( argsArr[ i ] ) {
-						if ( argsArr[ i ]._isValArray ) {
-							for ( var key in argsArr[ i ]._dep ) {
-								if ( key === "depObj" )
-									continue;
-								
-								if ( !dontTrack )
-									argsArr[ i ]._dep[ key ]._bind( func, argsArr, true );
-								
-								varInArgs = true;
-							}
-						
-						} else if ( argsArr[ i ]._isVar ) {
-							if ( !argsArr[ i ]._locked ) {
-								if ( !dontTrack )
-									argsArr[ i ]._bind( func, argsArr, true );
-								
-								varInArgs = true;
-							}
-						}
-					}
-				}
-				
-				if ( rea )
-					rea.addDep( args._isValArray ? args._dep : args ).push( args );
-				else if ( varInArgs )
-					rea = arrFunc( func, args );
-				
-				return rea;
+				return FunctionCall( func, argsArr, true );
 			} );
 			
 			operator( "~(", "call", 100, null, function( func, args ) {
@@ -2524,52 +2348,13 @@
 				//create arguments array
 				if ( args && args._isValArray && args[ 0 ] === "," ) {
 					argsArr = args.slice( 1 );
-					argsArr._dep = args._dep;
+					delete argsArr._dep;
 					
 				} else {
 					argsArr = [ args ];
-					
-					if ( args._isValArray )
-						argsArr._dep = args._dep;
-					else if ( args._isVar )	
-						argsArr._dep = args;
 				}
 				
-				//handle function part
-				if ( func ) {
-					if ( func._isValArray ) {
-						for ( key in func._dep ) {
-							if ( key === "depObj" )
-								continue;
-							
-							if ( !func._dep[ key ]._unbind( func, argsArr ) )
-								return false
-						}
-					
-					} else if ( func._isVar && !func._locked ) {
-						if ( !func._unbind( func, argsArr ) )
-							return false;
-					}
-				}
-				
-				//handle arguments part
-				if ( argsArr._dep ) {
-					if ( argsArr._dep._isVar ) {
-						if ( !argsArr._dep._unbind( func, argsArr ) )
-							return false;
-					
-					} else {
-						for ( key in argsArr._dep ) {
-							if ( key === "depObj" )
-								continue;
-								
-							if ( !argsArr._dep[ key ]._unbind( func, argsArr ) )
-								return false;
-						}
-					}
-				}
-				
-				return true;
+				return FunctionCall.prototype.remove( func, argsArr );
 			} );
 			
 			var objPropEval = {
@@ -2581,15 +2366,15 @@
 						if ( this.nextToken === "=" || this.nextToken === "~=" ||
 							 this.prevToken === "delete" || this.prevToken === "~delete" || this.prevToken === "~" ||
 							 this.nextToken === "(" || this.nextToken === ":(" || this.nextToken === "~(" )
-							return makeValArray( [ ".", obj, prop ] );
+							return makeExprArray( [ ".", obj, prop ] );
 						
 						return obj[ prop ];
 					},
 					ref :function( obj, prop ) {
-						return makeValArray( [ ".", obj, prop ], prop );
+						return makeExprArray( [ ".", obj, prop ], prop );
 					},
 					arr :function( obj, prop ) {
-						return makeValArray( [ ".", obj, prop ], prop._dep );
+						return makeExprArray( [ ".", obj, prop ], prop._dep );
 					}
 				},
 				ref : {
@@ -2597,13 +2382,13 @@
 						if ( prop.id === "(id)" )
 							prop = prop.value;
 						
-						return makeValArray( [ ".", obj, prop ], obj );
+						return makeExprArray( [ ".", obj, prop ], obj );
 					},
 					ref :function( obj, prop ) {
-						return makeValArray( [ ".", obj, prop ], obj, prop );
+						return makeExprArray( [ ".", obj, prop ], obj, prop );
 					},
 					arr :function( obj, prop ) {
-						return makeValArray( [ ".", obj, prop ], obj, prop._dep );
+						return makeExprArray( [ ".", obj, prop ], obj, prop._dep );
 					}
 				},
 				arr : {
@@ -2616,7 +2401,7 @@
 							return obj;
 						}
 						
-						return makeValArray( [ ".", obj, prop ], obj._dep );
+						return makeExprArray( [ ".", obj, prop ], obj._dep );
 					},
 					ref :function( obj, prop ) {
 						if ( obj[ 0 ] === "." ) {
@@ -2624,7 +2409,7 @@
 							return obj;
 						}
 						
-						return makeValArray( [ ".", obj, prop ], obj._dep, prop );
+						return makeExprArray( [ ".", obj, prop ], obj._dep, prop );
 					},
 					arr :function( obj, prop ) {
 						if ( obj[ 0 ] === "." ) {
@@ -2632,7 +2417,7 @@
 							return obj;
 						}
 						
-						return makeValArray( [ ".", obj, prop ], obj._dep, prop._dep );
+						return makeExprArray( [ ".", obj, prop ], obj._dep, prop._dep );
 					}
 				}
 			};
@@ -2748,16 +2533,29 @@
 					//use the value of a variable in case of assigning to the same variable
 					if ( assignTo ) {
 						if ( !expr.o.assignment && expr.o.first && expr.o.first._key === assignTo ) {
-							if ( expr.o.first._value._isValArray )
-								expr.o.first = makeValArray( expr.o.first._value.slice( 0 ), expr.o.first._value._dep );
-							else
+							if ( expr.o.first._value._isExprArray ) {
+								var tmp = makeExprArray( expr.o.first._value.slice( 0 ), expr.o.first._value._dep );
+								
+								if ( "_context" in expr.o.first._value )
+									tmp._inCtx( expr.o.first._context );
+								
+								expr.o.first = tmp;
+								
+							} else {
 								expr.o.first = expr.o.first._value;
+							}
 						}
 						
 						if ( expr.o.second && expr.o.second._key === assignTo ) {
-							if ( expr.o.second._value._isValArray )
-								expr.o.second = makeValArray( expr.o.second._value.slice( 0 ), expr.o.second._value._dep );
-							else
+							if ( expr.o.second._value._isExprArray ) {
+								var tmp = makeExprArray( expr.o.second._value.slice( 0 ), expr.o.second._value._dep );
+								
+								if ( "_context" in expr.o.second._value )
+									tmp.inCtxt( expr.o.second._context );
+								
+								expr.o.second = tmp;
+								
+							} else
 								expr.o.second = expr.o.second._value;
 						}
 					}
@@ -3185,7 +2983,6 @@
 					v._guid	  = Variable.prototype._guid++;
 					v._dep 	  = null;
 					v._partOf = {};
-					v._funcs  = [];
 					
 					v.set( val );
 					
@@ -3207,10 +3004,8 @@
 				_value  : undefined,
 				_dep    : null,
 				_partOf : null,
-				_funcs  : null,
 				
 				_isVar : true,
-				_context : null,
 				
 				valueOf : function() {
 					try {
@@ -3290,94 +3085,12 @@
 								this._value;
 				},
 				
-				_bind : function( f, args, eval ) {
-					this._funcs.push( {
-						func : f,
-						args : args,
-						eval : eval
-					} );
-					
-					return this;
-				},
-				_unbind : function( f, args ) {
-					if ( arguments.length === 0 ) {
-						//unbind all functions, if no function is specified
-						this._funcs.length = 0;
-					}
-					
-					var fIdx = this._funcs.length,
-						call,
-						argIdx,
-						funcsEquiv,
-						argsEquiv;
-					
-					
-					while ( fIdx-- ) {
-						call = this._funcs[ fIdx ];
-						
-						//compare function and arguments
-						argIdx = args.length;
-						if ( equiv( call.func, f ) && equiv( call.args, args ) ) {
-							this._funcs.splice( fIdx, 1 )
-							return true;
-						}
-					}
-					
-					return false;
-				},
-				_trigger : function() {
-					var i = 0,
-						l = this._funcs.length,
-						call, func, obj,
-						j, m, args;
-					
-					while ( i < l ) {
-						call = this._funcs[ i++ ];
-						args = call.args;
-						
-						if ( call.func._isValArray && call.func._propAccess ) {
-							var obj = call.func[ 1 ].valueOf(),
-								prop,
-								j = 2,
-								m = call.func.length-1;
-							
-							while ( j<m )
-								obj = obj[ call.func[ j++ ].valueOf() ];
-							
-							prop = call.func[ j ].valueOf();
-							
-							func = obj[ prop ];
-						
-						} else {
-							func = call.func._isValArray ? call.func.valueOf() : call.func._isVar ? call.func._value : call.func;
-						}
-						
-						if ( call.eval ) {
-							args = [];
-							j = call.args.length;
-							while ( j-- ) {
-								args[ j ] = call.args[ j ].valueOf();
-							}
-						}
-						
-						try {
-							func.apply( obj || this, args );
-						} catch( e ) {
-							error( "A reactive function call causes problems: " + e.message );
-						}
-					}
-					
-					return this;
-				},
-				_invalidate : function() {
+				invalidate : function( from ) {
 					delete this._evaled;
 					delete this._string;
 					
 					for ( var id in this._partOf )
-						this._partOf[ id ]._invalidate();
-					
-					if ( this._funcs.length )
-						this._trigger();
+						this._partOf[ id ].invalidate( this );
 					
 					return this;
 				},
@@ -3401,8 +3114,8 @@
 						//set new dependency
 						this._dep = ( val && val._dep ) || null;
 						
-						if ( val._isValArray )
-							val.makeVar();
+						if ( val._isExprArray )
+							val._makeVar();
 						
 						//set context
 						if ( val._context ) {
@@ -3414,7 +3127,7 @@
 					}
 					
 					//invalidate
-					this._invalidate();
+					this.invalidate();
 					
 					//delete previous value
 					delete this._prev;
@@ -3435,7 +3148,7 @@
 						this._dep[ id ]._partOf[ this._guid ] = this;
 					}
 					
-					this._linkCtxtDeps();
+					this._linkCtxtDeps && this._linkCtxtDeps();
 				},
 				_linkCtxtDeps : function( v ) {
 					//set partOf of context parts
@@ -3473,7 +3186,7 @@
 							delete this._dep[ id ]._partOf[ this._guid ];
 					}
 					
-					this._unlinkCtxtDeps();
+					this._unlinkCtxtDeps && this._unlinkCtxtDeps();
 				},
 				_unlinkCtxtDeps : function( v ) {
 					//delete partOf of context parts
@@ -3499,7 +3212,7 @@
 							this._unlinkCtxtDeps.call( this._value[ idx ], this );
 					}
 				},
-				_inCtxt : function( ctxt ) {
+				inCtxt : function( ctxt ) {
 					if ( this._context )
 						return this;
 					
@@ -3524,8 +3237,222 @@
 					delete this._guid
 					delete this._dep;
 					delete this._partOf;
-					this._funcs.length = 0;
-					delete this._funcs;
+					
+					return true;
+				}
+			};
+			
+			//function calls
+			var FunctionCall = function( func, args, evalArgs ) {
+					var c = this instanceof FunctionCall ? this : Object.create( FunctionCall.prototype );
+					
+					c._guid	= FunctionCall.prototype._guid++;
+					
+					c._func = func;
+					c._args = args === undefined ? [] : args.constructor === Array ? args : [ args ];
+					c._argLits = [];
+					c._partOf = {};
+					c._evalArgs = !!evalArgs;
+					
+					//don't track changes of function or arguments, if:
+					// - tracking is explicitly turned of by dontTrack
+					// - the function acts as a constructor
+					if ( dontTrack )
+						return c;
+					
+					var setPartOf = function( v ) {
+						v._partOf[ "#f" + c._guid ] = c;
+					};
+					
+					//set partOf on functions side
+					doWithReactive( c._func, setPartOf );
+					
+					//set partOf on arguments' side
+					var i = c._args.length;
+					while ( i-- )
+						doWithReactive( c._args[ i ], setPartOf );
+					
+					return c;
+				};
+			
+			FunctionCall.prototype = {
+				_guid : 0,
+				
+				_func : null,
+				_funcLit : null,
+				_ctxtLit : null,
+				_args : null,
+				_argLits : null,
+				
+				_partOf : null,
+				_evalArgs : false,
+				_isCall : true,
+				
+				valueOf : function() {
+					return this._evaled;
+				},
+				
+				_call : function( update ) {
+					var i, j, outOfDate;
+					
+					//check, if this._func depends on update
+					outOfDate = false;
+					if ( !this._funcLit ) {
+						outOfDate = true;
+					
+					} else if ( this._func._isExprArray ) {
+						for ( i in this._func._dep ) {
+							if ( i === "depObj" )
+								continue;
+							
+							if ( this._func._dep[ i ] === update ) {
+								outOfDate = true;
+								break;
+							}
+						}
+					
+					} else if ( this._func._isVar ) {
+						if ( this._func === update )
+							outOfDate = true;
+					}
+					
+					//evaluate function to literal
+					if ( outOfDate ) {
+						if ( this._func && this._func._isExprArray ) {
+							if ( this._func._propAccess ) {
+								var j = 2,
+									m = this._func.length-1;
+								
+								this._ctxtLit = this._func[ 1 ].valueOf();
+								
+								while ( j<m )
+									this._ctxtLit = this._ctxtLit[ this._func[ j++ ].valueOf() ];
+								
+								this._funcLit = this._ctxtLit[ this._func[ j ].valueOf() ];
+								
+							} else {
+								this._funcLit = this._func.valueOf();
+							}
+						
+						} else if ( this._func && this._func._isVar ) {
+							this._funcLit = this._func.valueOf();
+						
+						} else {
+							this._funcLit = this._func;
+						}
+					}
+					
+					if ( !this._evalArgs ) {
+						try {
+							return this._funcLit.apply( this._ctxtLit || this, this._args );
+						} catch( e ) {
+							error( "A reactive function call causes problems: " + e.message );
+						}
+					}
+					
+					j = this._args.length;
+					while ( j-- ) {
+						//check, if this._args[ i ] depends on update
+						outOfDate = false;
+						if ( !( "j" in this._argLits ) ) {
+							outOfDate = true;
+						
+						} else if ( this._args[ j ]._isExprArray ) {
+							for ( i in this._args[ j ]._dep ) {
+								if ( i === "depObj" )
+									continue;
+								
+								if ( this._args[ j ]._dep[ i ] === update ) {
+									outOfDate = true;
+									break;
+								}
+							}
+						
+						} else if ( this._args[ j ]._isVar ) {
+							if ( this._args[ j ] === update )
+								outOfDate = true;
+						
+						}
+						
+						//and evaluate arguments to literals
+						if ( outOfDate ) {
+							if ( this._args[ j ]._isExprArray || this._args[ j ]._isVar )
+								this._argLits[ j ] = this._args[ j ].valueOf();
+							else
+								this._argLits[ j ] = this._args[ j ];
+						}
+					}
+					
+					try {
+						return this._evaled = this._funcLit.apply( this._ctxtLit || this, this._argLits );
+					} catch( e ) {
+						error( "A reactive function call causes problems: " + e.message );
+					}
+				},
+				
+				invalidate : function( from ) {
+					this._call( from );
+					
+					for ( var id in this._partOf )
+						this._partOf[ id ].invalidate( this );
+					
+					return this;
+				},
+				
+				unlink : function() {
+					var rmvPartOf = function( v ) {
+						delete v._partOf[ "#f" + this._guid ];
+					};
+					
+					//remove partOf on functions side
+					doWithReactive.call( this, this._func, rmvPartOf );
+					
+					//remove partOf on arguments' side
+					var i = this._args.length;
+					while ( i-- )
+						doWithReactive.call( this, this._args[ i ], rmvPartOf );
+				},
+				
+				remove : function( func, args ) {
+					var call;
+					
+					//find handler to FunctionCall instance
+					var checkCall = function( v ) {
+						for ( var id in v._partOf ) {
+							if ( id.charAt( 0 ) !== "#" || id.charAt( 1 ) !== "f" )
+								continue;
+							
+							if ( equiv( func, v._partOf[ id ]._func ) &&
+								 equiv( args, v._partOf[ id ]._args ) ) {
+								call = v._partOf[ id ];
+								return false;
+							}
+						}
+						
+						return true;
+					};
+					
+					var callFound = !doWithReactive( func, checkCall );
+					
+					if ( !callFound ) {
+						var argIdx = args.length;
+						while ( argIdx-- )
+							if ( callFound = !doWithReactive( args[ argIdx ], checkCall ) )
+								break;
+					}
+					
+					if ( !callFound )
+						//error ( "Function call to remove does not exist!" );
+						return false;
+					
+					call.unlink();
+					
+					delete call._func;
+					delete call._funcLit;
+					delete call._ctxtLit;
+					delete call._args;
+					delete call._argLits;
+					delete call._partOf;
 					
 					return true;
 				}
@@ -3555,7 +3482,7 @@
 					for ( key in this.table ) {
 						v = this.table[ key ];
 						
-						if ( this.table.hasOwnProperty( key ) && ( !vars || !(key in vars) ) && !v._locked && isEmptyObj( v._partOf ) && !v._funcs.length ) {
+						if ( this.table.hasOwnProperty( key ) && ( !vars || !(key in vars) ) && !v._locked && isEmptyObj( v._partOf ) ) {
 							ret = ret && v[ "delete" ]();
 							delete this.table[ key ];
 							del = true;
@@ -3583,12 +3510,6 @@
 						for ( var id in this.table[ key ]._partOf )
 							if ( this.table[ key ]._partOf.hasOwnProperty( id ) )
 								error( "Cannot delete variable " + key + ". It is still used in: " + this.table[ key ]._partOf[ id ].toString() + "." );
-						
-						if ( this.table[ key ]._funcs.length )
-							error( "Cannot delete variable " + key + ". It is still used in: " + 
-								( this.table[ key ]._funcs[ 0 ].func._isVar ? this.table[ key ]._funcs[ 0 ].func._key : "function() {}" ) + 
-								"( " + this.table[ key ]._funcs[ 0 ].args + " )."
-							);
 						
 						var ret = this.table[ key ][ "delete" ]();
 						
@@ -3717,7 +3638,7 @@
 						
 						ret = interpret.apply( props, arguments );
 						
-						if ( ret && ( ret._isVar || ret._isValArray || ret._isCtxtArray ) )
+						if ( ret && ( ret._isVar || ret._isExprArray || ret._isCall ) )
 							ret = ret.valueOf();
 						
 						return ret;
@@ -3742,7 +3663,7 @@
 							
 							ret = interpret.apply( props, arguments );
 							
-							if ( ret._isValArray )
+							if ( ret._isExprArray )
 								ret = props.nameTable.set( null, ret );
 							
 							dontTrack = false;
