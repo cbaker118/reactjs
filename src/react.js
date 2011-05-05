@@ -92,6 +92,9 @@
 			
 			var dontTrack = false;
 			
+			var DepObj = function(){};
+			DepObj.prototype = {};
+			
 			var doWithReactive = function( rea, f ) {
 				var depId;
 				
@@ -100,9 +103,6 @@
 				
 				if ( rea._isExprArray ) {
 					for ( depId in rea._dep ) {
-						if ( depId === "depObj" )
-							continue;
-						
 						if ( f.call( this, rea._dep[ depId ] ) === false )
 							return false;
 					}
@@ -133,7 +133,7 @@
 								idx = this.length;
 								if ( idx === 2 ) {
 									//unary
-									if ( this[ 1 ]._isVar || this[ 1 ]._isExprArray )
+									if ( this[ 1 ]._isVar || this[ 1 ]._isExprArray || this[ 1 ]._isCall )
 										cur = this[ 1 ].valueOf.apply( this[ 1 ], context );
 									else
 										cur = this[ 1 ];
@@ -143,7 +143,7 @@
 								
 								//binary with two or more operands
 								while( idx--, idx > 0 ) {
-									if ( this[ idx ]._isVar || this[ idx ]._isExprArray  )
+									if ( this[ idx ]._isVar || this[ idx ]._isExprArray || this[ idx ]._isCall )
 										cur = this[ idx ].valueOf.apply( this[ idx ], context );
 									else
 										cur = this[ idx ];
@@ -236,7 +236,7 @@
 								
 								if ( this.length === 2 ) {
 									//unary
-									if ( this[ 1 ]._isVar || this[ 1 ]._isExprArray )
+									if ( this[ 1 ]._isVar || this[ 1 ]._isExprArray || this[ 1 ]._isCall )
 										cur = this[ 1 ]._prevValueOf.apply( this[ 1 ], arguments );
 									else
 										cur = this[ 1 ];
@@ -246,7 +246,7 @@
 								
 								//binary with two or more operands
 								for ( var idx = this.length-1; idx > 0; idx-- ) {
-									if ( this[ idx ]._isVar || this[ idx ]._isExprArray  )
+									if ( this[ idx ]._isVar || this[ idx ]._isExprArray || this[ idx ]._isCall )
 										cur = this[ idx ]._prevValueOf.apply( this[ idx ], arguments );
 									else
 										cur = this[ idx ];
@@ -265,7 +265,7 @@
 							var i, l = arguments.length, arg, id;
 							
 							if ( l && this._dep === null )
-								this._dep = { depObj:true };
+								this._dep = Object.create( DepObj.prototype );
 							
 							for ( i = 0; i < l; i++ ) {
 								arg = arguments[ i ];
@@ -273,15 +273,12 @@
 								if ( !arg )
 									continue;
 								
-								if ( arg.depObj ) {
+								if ( arg instanceof DepObj ) {
 									for ( id in arg ) {
-										if ( id === "depObj" )
-											continue;
-										
 										this._dep[ arg[ id ]._guid ] = arg[ id ];
 									}
 								
-								} else if ( arg && arg._isVar ) {
+								} else if ( arg && ( arg._isVar || arg._isCall ) ) {
 									this._dep[ arg._guid ] = arg;
 								}
 							}
@@ -294,9 +291,6 @@
 							if ( _dep.constructor === Array ) {
 								_dep = _dep._dep;
 								DEPLOOP : for ( id2 in _dep ) {
-									if ( id2 === "depObj" )
-										continue;
-									
 									for ( i = 1, l = this.length; i < l; i++ ) {
 										if ( this[ i ] && this[ i ].constructor === Array ) {
 											for ( id1 in this[ i ]._dep ) {
@@ -336,9 +330,6 @@
 							var ret = true;
 							//delete partOfs on dependencies side
 							for ( id in this._dep ) {
-								if ( id === "depObj" )
-									continue;
-								
 								if ( this._dep[ id ]._partOf )
 									ret = ret && delete this._dep[ id ]._partOf[ this._guid ];
 							}
@@ -549,7 +540,7 @@
 																"lit" :
 															operand._isValArray ?
 																"arr" :
-															operand._key ?
+															operand._isVar || operand._isCtxtArray || operand._isCall ?
 																"ref" :
 																"lit";
 												}
@@ -593,7 +584,7 @@
 																"lit" :
 															left._isValArray ?
 																"arr" :
-															left._key || left._isCtxtArray || ( left._value && left._value._isValArray ) ?
+															left._isVar || left._isCtxtArray || left._isCall || ( left._value && left._value._isValArray ) ?
 																"ref" :
 																"lit";
 												}
@@ -608,7 +599,7 @@
 																"lit" :
 															right._isValArray ?
 																"arr" :
-															right._key || right._isCtxtArray || ( right._value && right._value._isValArray ) ?
+															right._isVar || right._isCtxtArray || right._isCall || ( right._value && right._value._isValArray ) ?
 																"ref" :
 																"lit";
 												}
@@ -2280,7 +2271,7 @@
 					}
 					
 					if ( ctxt )
-						v = v._inCtx( ctxt );
+						v = v.inCtxt( ctxt );
 					
 					return v;
 				}
@@ -2526,7 +2517,7 @@
 								var tmp = makeExprArray( expr.o.first._value.slice( 0 ), expr.o.first._value._dep );
 								
 								if ( "_context" in expr.o.first._value )
-									tmp._inCtx( expr.o.first._context );
+									tmp.inCtxt( expr.o.first._context );
 								
 								expr.o.first = tmp;
 								
@@ -3101,7 +3092,12 @@
 					
 					if ( val ) {
 						//set new dependency
-						this._dep = ( val && val._dep ) || null;
+						if ( val && val._dep )
+							this._dep = val._dep;
+						else if ( val && val._isCall )
+							this._dep = val;
+						else
+							delete this._dep;
 						
 						if ( val._isExprArray )
 							val._makeVar();
@@ -3130,11 +3126,18 @@
 				_linkDeps : function() {
 					//set partOf on dependencies' side
 					var id;
-					for ( id in this._dep ) {
-						if ( id === "depObj" )
-							continue;
-						
-						this._dep[ id ]._partOf[ this._guid ] = this;
+					
+					if ( this._dep && this._dep._isCall ) {
+						this._dep._partOf[ this._guid ] = this;
+						this._dep.link();
+					
+					} else {
+						for ( id in this._dep ) {
+							this._dep[ id ]._partOf[ this._guid ] = this;
+							
+							if ( this._dep[ id ]._isCall )
+								this._dep[ id ].link();
+						}
 					}
 					
 					this._linkCtxtDeps && this._linkCtxtDeps();
@@ -3167,12 +3170,21 @@
 				_unlinkDeps : function() {
 					//delete partOf on dependencies' side
 					var id;
-					for ( id in this._dep ) {
-						if ( id === "depObj" )
-							continue;
+					
+					if ( this._dep && this._dep._isCall ) {
+						if ( this._dep._partOf )
+							delete this._dep._partOf[ this._guid ];
 						
-						if ( this._dep[ id ]._partOf )
-							delete this._dep[ id ]._partOf[ this._guid ];
+						this._dep.unlink();
+					
+					} else {
+						for ( id in this._dep ) {
+							if ( this._dep[ id ]._partOf )
+								delete this._dep[ id ]._partOf[ this._guid ];
+							
+							if ( this._dep[ id ]._isCall )
+								this._dep[ id ].unlink();
+						}
 					}
 					
 					this._unlinkCtxtDeps && this._unlinkCtxtDeps();
@@ -3233,20 +3245,39 @@
 			
 			//function calls
 			var FunctionCall = function( func, args, evalArgs ) {
+					var funcIsLit, argsAreLits;
+					
+					//prepare function
 					if ( func._isVar && func._locked )
 						func = func._value;
-						
+					
+					if ( typeof func === "function" )
+						funcIsLit = true;
+					
+					//prepare arguments
 					if ( args === undefined )
 						args = [];
 					else if ( args.constructor !== Array || args._isExprArray )
 						args = [ args ];
 					
-					if ( typeof func === "function" && args[ 0 ] && args[ 0 ]._func && args[ 0 ]._func.inverse === func )
+					argIdx = args.length;
+					argsAreLits = true;
+					while ( argIdx-- ) {
+						if ( args[ argIdx ]._isVar || args[ argIdx ]._isExprArray || args[ argIdx ]._isCall ) {
+							argsAreLits = false;
+							break;
+						}
+					}
+					
+					if ( funcIsLit && args[ 0 ] && args[ 0 ]._func && args[ 0 ]._func.inverse === func )
 						return args[ 0 ]._args[ 0 ];
+					
+					if ( funcIsLit && argsAreLits )
+						return func.apply( this, args );
 					
 					var c = this instanceof FunctionCall ? this : Object.create( FunctionCall.prototype );
 					
-					c._guid	= FunctionCall.prototype._guid++;
+					c._guid	= "#f" + FunctionCall.prototype._guid++;
 					
 					c._func = func;
 					c._args = args;
@@ -3257,20 +3288,8 @@
 					//don't track changes of function or arguments, if:
 					// - tracking is explicitly turned of by dontTrack
 					// - the function acts as a constructor
-					if ( dontTrack )
-						return c;
-					
-					var setPartOf = function( v ) {
-						v._partOf[ "#f" + c._guid ] = c;
-					};
-					
-					//set partOf on functions side
-					doWithReactive( c._func, setPartOf );
-					
-					//set partOf on arguments' side
-					var i = c._args.length;
-					while ( i-- )
-						doWithReactive( c._args[ i ], setPartOf );
+					if ( !dontTrack )
+						c.link();
 					
 					return c;
 				};
@@ -3289,7 +3308,7 @@
 				_isCall : true,
 				
 				valueOf : function() {
-					return this._evaled;
+					return "_evaled" in this ? this._evaled : this._call();
 				},
 				
 				_call : function( update ) {
@@ -3302,9 +3321,6 @@
 					
 					} else if ( this._func._isExprArray ) {
 						for ( i in this._func._dep ) {
-							if ( i === "depObj" )
-								continue;
-							
 							if ( this._func._dep[ i ] === update ) {
 								outOfDate = true;
 								break;
@@ -3359,9 +3375,6 @@
 						
 						} else if ( this._args[ j ]._isExprArray ) {
 							for ( i in this._args[ j ]._dep ) {
-								if ( i === "depObj" )
-									continue;
-								
 								if ( this._args[ j ]._dep[ i ] === update ) {
 									outOfDate = true;
 									break;
@@ -3399,15 +3412,32 @@
 					return this;
 				},
 				
+				link : function() {
+					var setPartOf = function( v ) {
+						v._partOf[ this._guid ] = this;
+					};
+					
+					//set partOf on functions side
+					doWithReactive.call( this, this._func, setPartOf );
+					
+					//set partOf on arguments' side
+					var i = this._args.length;
+					while ( i-- )
+						doWithReactive.call( this, this._args[ i ], setPartOf );
+				},
+				
 				unlink : function() {
 					var rmvPartOf = function( v ) {
-						delete v._partOf[ "#f" + this._guid ];
+						delete v._partOf[ this._guid ];
 					};
 					
 					//remove partOf on functions side
 					doWithReactive.call( this, this._func, rmvPartOf );
 					
 					//remove partOf on arguments' side
+					if ( !this._args )
+						return;
+					
 					var i = this._args.length;
 					while ( i-- )
 						doWithReactive.call( this, this._args[ i ], rmvPartOf );

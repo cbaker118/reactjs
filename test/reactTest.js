@@ -2143,7 +2143,7 @@ test( "call w/o return value: function is variable, argument is literal", functi
 	
 	ok( call._value._func === func , "react( \"func( 100 )\" )._value._func === func" );
 	ok( equivArr( call._value._args, [ 100 ] ), "react( \"func( 100 )\" )._value._args" );
-	ok( "#f" + call._value._guid in func._partOf, "\"#f\" + call._value._guid in func._partOf" );
+	ok( call._value._guid in func._partOf, "call._value._guid in func._partOf" );
 	
 	strictEqual( foo, 100, "foo" );
 	
@@ -2373,9 +2373,9 @@ test( "registering :() and deregistering ~() call", function() {
 	call2 = react.leak( r1_func2, ":(", r1, ");" );
 	call3 = react.leak( r1_func3, ":(", r1, ");" );
 	
-	ok( r1._partOf[ "#f" + call1._value._guid ]._func === r1_func1 &&
-		r1._partOf[ "#f" + call2._value._guid ]._func === r1_func2 &&
-		r1._partOf[ "#f" + call3._value._guid ]._func === r1_func3,
+	ok( r1._partOf[ call1._value._guid ]._func === r1_func1 &&
+		r1._partOf[ call2._value._guid ]._func === r1_func2 &&
+		r1._partOf[ call3._value._guid ]._func === r1_func3,
 		"r1 has been registered to the functions" );
 	
 	strictEqual( r1_func1_val, undefined, "r1_func1_val is undefined." );
@@ -2412,6 +2412,8 @@ test( "call w/ return value: return value used, but not in an assignment", funct
 	strictEqual( countProps( sqr._partOf ), 4, "countProps( sqr._partOf )" );
 	strictEqual( countProps( x._partOf ), 2, "countProps( x._partOf )" );
 	
+	//TODO: use function call as argument in another call
+	
 	ok( react( "sqr~( x ); sqr~( 10 )" ), "react( \"sqr~( x ); sqr~( 10 )\" )" );
 	ok( react( "sqr~( x ); sqr~( 10 )" ), "react( \"sqr~( x ); sqr~( 10 )\" )" );
 	ok( isEmptyObj( sqr._partOf ), "isEmptyObj( sqr._partOf )" );
@@ -2439,7 +2441,6 @@ test( "call w/ return value: return value stored in a variable", function() {
 	react( "rea = sqr(", 10, ")" );
 	ok( rea._value._func === sqr, "react( \"rea = sqr(\", 10, \")\" )._value._func" );
 	ok( equivArr( rea._value._args, [ 10 ] ), "react( \"rea = sqr(\", 10, \")\" )._value._args" );
-	debugger;
 	ok( isEmptyObj( x._partOf ), "isEmptyObj( x._partOf )" );
 	strictEqual( countProps( sqr._partOf ), 1, "countProps( sqr._partOf )" );
 	strictEqual( xSqr, 100, "xSqr" );
@@ -2448,18 +2449,16 @@ test( "call w/ return value: return value stored in a variable", function() {
 	react( "rea = sqr( x )" );
 	ok( rea._value._func === sqr, "react( \"rea = sqr( x )\" )._value._func" );
 	ok( equivArr( rea._value._args, [ x ] ), "react( \"rea = sqr( x )\" )._value._args" );
-	debugger;
 	strictEqual( countProps( sqr._partOf ), 1, "countProps( sqr._partOf )" );
 	strictEqual( countProps( x._partOf ), 1, "countProps( x._partOf )" );
 	strictEqual( xSqr, x.valueOf()*x.valueOf(), "xSqr" );
 	strictEqual( react( "rea" ), x.valueOf()*x.valueOf(), "react( \"rea\" )" );
-	debugger;
+	
 	react( "rea += sqr(", 10, ")" );
 	ok( rea._value[ 2 ]._func === sqr, "react( \"rea += sqr(\", 10, \")\" )._value[ 2 ]._func" );
-	ok( equivArr( rea._value[ 2 ]._args, [ x ] ), "react( \"rea += sqr(\", 10, \")\" )._value[ 2 ]._args" );
+	ok( equivArr( rea._value[ 2 ]._args, [ 10 ] ), "react( \"rea += sqr(\", 10, \")\" )._value[ 2 ]._args" );
 	strictEqual( countProps( sqr._partOf ), 2, "countProps( sqr._partOf )" );
 	strictEqual( countProps( x._partOf ), 1, "countProps( x._partOf )" );
-	strictEqual( xSqr, 100 + x.valueOf()*x.valueOf(), "xSqr" );
 	strictEqual( react( "rea" ), 100 + x.valueOf()*x.valueOf(), "react( \"rea\" )" );
 	
 	ok( react( "delete rea" ), "react( \"delete rea\" )" );
@@ -2470,7 +2469,7 @@ test( "call w/ return value: return value stored in a variable", function() {
 	react( "delete sqr" );
 } );
 
-/*
+
 module( "Objecthandling" );
 
 test( "operator overloading", function() {
@@ -2600,14 +2599,15 @@ test( "custom datatype", function() {
 	ok( react( "Type = ", Type ), "react( \"Type = \", Type )" );
 	
 	strictEqual( react( "Type( 1235813 )" ).value, 1235813, "reactive (on function side) instance: react( \"Type( 1235813 )\" )" );
-	strictEqual( react.leak( "Type" )._funcs.length, 0, "react.leak( \"Type\" )._funcs.length" );
+	strictEqual( countProps( react.leak( "Type" )._partOf ), 1, "countProps( react.leak( \"Type\" )._partOf )" );
 	
 	strictEqual( react( Type, "( x )" ).value, x.valueOf(), "reactive (on argument side) instance: react( Type, \"( x )\" )" );
-	strictEqual( x._funcs.length, 0, "x._funcs.length" );
+	strictEqual( countProps( x._partOf ), 1, "countProps( x._partOf )" );
 	
 	strictEqual( react( "inst = ", Type, "( x+2 )" ).value, x.valueOf()+2, "reactive instance: react( \"inst = \", Type, \"( x+2 )\" ).value" );
 	strictEqual( react( "inst2 = Type( inst )" ).value, react( "inst" ), "reactive, depending instances: react( \"inst2 = Type( inst )\" ).value" );
-	strictEqual( react.leak( "Type" )._funcs.length, 0, "react.leak( \"Type\" )._funcs.length" );
+	strictEqual( countProps( react.leak( "Type" )._partOf ), 2, "countProps( react.leak( \"Type\" )._partOf )" );
+	strictEqual( countProps( x._partOf ), 2, "countProps( x._partOf )" );
 	ok( react( "x += 1" ), "react( \"x += 1\" )" );
 	strictEqual( react( "inst" ).value, x.valueOf()+2, "automatic update of reactive instance: react( \"inst\" ).value" );
 	strictEqual( react( "inst2" ).value, react( "inst" ), "automatic update of depending reactive instance: react( \"inst2\" ).value" );
@@ -2628,6 +2628,7 @@ test( "simple context variables without default context", function() {
 	ok( !("_context" in ctxtVar), "context of ctxtVar reset to null" );
 	
 	strictEqual( react( "ctxtVar" ), func, "variable acts as normal function: react( \"ctxtVar\" )" );
+	
 	strictEqual( react( "ctxtVar{ x }" ), x.valueOf(), "evaluation in custom context: react( \"ctxtVar{ x }\" )" );
 	strictEqual( react( "ctxtVar" ), func, "variable still acts as normal function: react( \"ctxtVar\" )" );
 	raises( function() { react( "ctxtVar = ctxtVar{ f }" ) }, "ctxtVar itself cannot hold a context: react( \"ctxtVar = ctxtVar{ f }\" ) -> exception" );
@@ -2701,4 +2702,3 @@ test( "reactive behaviour to context changes", function() {
 	
 	ok( isEmptyObj( react.leak( "x" )._partOf ), "after deletion of all ctxtVars, all dependencies were unlinked" );
 } );
-*/
