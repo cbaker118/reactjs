@@ -95,15 +95,17 @@
 			var DepObj = function(){};
 			DepObj.prototype = {};
 			
-			var doWithReactive = function( rea, f ) {
+			var doWithReactive = function( rea, f, fExpr ) {
 				var depId;
 				
 				if ( !rea )
 					return true;
 				
+				fExpr = fExpr || f;
+				
 				if ( rea._isExprArray ) {
 					for ( depId in rea._dep ) {
-						if ( f.call( this, rea._dep[ depId ] ) === false )
+						if ( fExpr.call( this, rea._dep[ depId ] ) === false )
 							return false;
 					}
 				
@@ -135,6 +137,8 @@
 									//unary
 									if ( this[ 1 ]._isVar || this[ 1 ]._isExprArray || this[ 1 ]._isCall )
 										cur = this[ 1 ].valueOf.apply( this[ 1 ], context );
+									else if ( context.length && typeof this[ 1 ] === "function" )
+										cur = this[ 1 ].apply( this[ 1 ], context );
 									else
 										cur = this[ 1 ];
 									
@@ -145,6 +149,8 @@
 								while( idx--, idx > 0 ) {
 									if ( this[ idx ]._isVar || this[ idx ]._isExprArray || this[ idx ]._isCall )
 										cur = this[ idx ].valueOf.apply( this[ idx ], context );
+									else if ( context.length && typeof this[ idx ] === "function" )
+										cur = this[ idx ].apply( this[ idx ], context );
 									else
 										cur = this[ idx ];
 									
@@ -232,12 +238,20 @@
 								var op = this[ 0 ],
 									len = this.length-1,
 									ret,
-									cur;
+									cur,
+									context;
+								
+								context = Array.prototype.slice.apply( this._context || arguments );
+								idx = context.length;
+								while( idx-- )
+									context[ idx ] = context[ idx ].valueOf();
 								
 								if ( this.length === 2 ) {
 									//unary
 									if ( this[ 1 ]._isVar || this[ 1 ]._isExprArray || this[ 1 ]._isCall )
 										cur = this[ 1 ]._prevValueOf.apply( this[ 1 ], arguments );
+									else if ( context.length && typeof this[ 1 ] === "function" )
+										cur = this[ 1 ].apply( this[ 1 ], context );
 									else
 										cur = this[ 1 ];
 									
@@ -248,6 +262,8 @@
 								for ( var idx = this.length-1; idx > 0; idx-- ) {
 									if ( this[ idx ]._isVar || this[ idx ]._isExprArray || this[ idx ]._isCall )
 										cur = this[ idx ]._prevValueOf.apply( this[ idx ], arguments );
+									else if ( context.length && typeof this[ idx ] === "function" )
+										cur = this[ idx ].apply( this[ idx ], context );
 									else
 										cur = this[ idx ];
 									
@@ -278,7 +294,7 @@
 										this._dep[ arg[ id ]._guid ] = arg[ id ];
 									}
 								
-								} else if ( arg && ( arg._isVar || arg._isCall ) ) {
+								} else if ( arg && ( arg._isVar || arg._isCall || arg._isPath ) ) {
 									this._dep[ arg._guid ] = arg;
 								}
 							}
@@ -326,16 +342,6 @@
 								delete this._dep[ _dep._guid ];
 							}
 						},
-						del = function() {
-							var ret = true;
-							//delete partOfs on dependencies side
-							for ( id in this._dep ) {
-								if ( this._dep[ id ]._partOf )
-									ret = ret && delete this._dep[ id ]._partOf[ this._guid ];
-							}
-							
-							return ret;
-						},
 						_makeVar = function() {
 							delete this._checkDep;
 							delete this.addDep;
@@ -347,11 +353,15 @@
 							this._isCtxtArray = true;
 							this._context = ctxt;
 							return this;
+						},
+						unlinkCalls = function() {
+							for ( var id in this._dep ) {
+								if ( this._dep[ id ]._isCall )
+									this._dep[ id ].unlink();
+							}
 						};
 					
 					return function( arr ) {
-						var i, l, id, arg;
-						
 						arr.valueOf 	 = valueOf;
 						arr.toString     = toString;
 						arr._prevValueOf = _prevValueOf;
@@ -364,7 +374,7 @@
 						arr._dep		 = arr._dep || null;
 						arr._checkDep 	 = _checkDep;
 						arr.addDep		 = addDep;
-						arr[ "delete" ]  = del;
+						arr.unlinkCalls  = unlinkCalls;
 						
 						arr.addDep.apply( arr, Array.prototype.slice.call( arguments, 1 ) );
 						
@@ -540,7 +550,7 @@
 																"lit" :
 															operand._isValArray ?
 																"arr" :
-															operand._isVar || operand._isCtxtArray || operand._isCall ?
+															operand._isVar || operand._isCtxtArray || operand._isCall || ( operand._isFunc && delete operand._isFunc ) ?
 																"ref" :
 																"lit";
 												}
@@ -580,11 +590,11 @@
 													left = makeExprArray( left.slice( 0 ), left._dep );
 													typeL = "arr";
 												} else {
-													typeL = !left ? 
+													typeL = !left || typeL === "number" || typeL === "string" || typeL === "boolean" ? 
 																"lit" :
 															left._isValArray ?
 																"arr" :
-															left._isVar || left._isCtxtArray || left._isCall || ( left._value && left._value._isValArray ) ?
+															left._isVar || left._isCtxtArray || left._isCall || ( left._value && left._value._isValArray ) || ( left._isFunc && delete left._isFunc) ?
 																"ref" :
 																"lit";
 												}
@@ -595,11 +605,11 @@
 													right = makeExprArray( right.slice( 0 ), right._dep );
 													typeR = "arr";
 												} else {
-													typeR = !right ? 
+													typeR = !right || typeR === "number" || typeR === "string" || typeR === "boolean" ? 
 																"lit" :
 															right._isValArray ?
 																"arr" :
-															right._isVar || right._isCtxtArray || right._isCall || ( right._value && right._value._isValArray ) ?
+															right._isVar || right._isCtxtArray || right._isCall || ( right._value && right._value._isValArray ) || ( right._isFunc && delete right._isFunc) ?
 																"ref" :
 																"lit";
 												}
@@ -735,227 +745,6 @@
 				}() )
 			);
 			
-			var updateProp = function( path ) {
-					var oldO, oldP,
-						i = 2, l = path.length-1,
-						ctxtProp,
-						pathObj = reactPaths.search( path );
-					
-					//get old ctxt and old prop
-					oldO = path[ 1 ]._prevValueOf ? path[ 1 ]._prevValueOf() : path[ 1 ];
-					for ( i = 2; i<l; i++ )
-						oldO = [ path[ i ]._prevValueOf ? path[ i ]._prevValueOf() : path[ i ] ];
-					
-					oldP = path[ l ]._prevValueOf ? path[ l ]._prevValueOf() : path[ l ];
-					
-					//restore value of old ctxt and prop
-					revProps.rev( oldO, oldP, pathObj );
-					
-					//update object property value
-					ctxtProp = reactPaths.inCtxtProp( path );
-					revProps.set( ctxtProp.ctxt, ctxtProp.prop, pathObj );
-				};
-			
-			var revProps = [];
-				
-				revProps.set = function( ctxt, prop, pathObj ) {
-					//get new ctxt and prop
-					var propIdx = this.search( ctxt, prop ),
-						pathIdx,
-						path = pathObj.path,
-						val = pathObj.val,
-						del = pathObj.del,
-						rev = pathObj.rev,
-						pathIdx,
-						reactProp;
-					
-					//test for reactive value and make it literal
-					if ( val && ( val._isVar || val._isExprArray ) )
-						val = val.valueOf();
-					
-					if ( rev ) {
-						if ( propIdx === undefined ) {
-							reactProp = {
-								ctxt : ctxt,
-								prop : prop,
-								backupDel : !(prop in ctxt),
-								backup : ctxt[ prop ],
-								val : val,
-								del : del,
-								reactPaths : [ path ]
-							};
-							
-							this.push( reactProp );
-						
-						} else {
-							reactProp = this[ propIdx ];
-							
-							//test, if path is known to this object property
-							var pathIdx = reactProp.reactPaths.length;
-							while ( pathIdx-- ) {
-								if ( equiv( reactProp.reactPaths[ pathIdx ], path ) ) {
-									break;
-								}
-							}
-							
-							//path has not been registered previously for this object property
-							//add it
-							if ( pathIdx < 0 )
-								reactProp.reactPaths.push( path );
-							
-							//update value
-							reactProp.val = val;
-							reactProp.del = del;
-						}
-					}
-					
-					//update property
-					if ( del )
-						return delete ctxt[ prop ];
-					else
-						return ctxt[ prop ] = val;
-				};
-				
-				revProps.rev = function( ctxt, prop, pathObj ) {
-					var propIdx = revProps.search( ctxt, prop ),
-						pathIdx,
-						reactProp;
-					
-					if ( !pathObj.rev )
-						return true;
-					
-					if ( propIdx === undefined )
-						return false;
-					
-					reactProp = revProps[ propIdx ];
-					
-					//remove path
-					pathIdx = reactProp.reactPaths.length;
-					while ( pathIdx-- ) {
-						if ( equiv( pathObj.path, reactProp.reactPaths[ pathIdx ] ) ) {
-							reactProp.reactPaths.splice( pathIdx, 1 );
-							break;
-						}
-					}
-					
-					//restore value
-					if ( reactProp.reactPaths.length === 0 ) {
-						if ( reactProp.backupDel )
-							delete reactProp.ctxt[ reactProp.prop ];
-						else
-							reactProp.ctxt[ reactProp.prop ] = reactProp.backup;
-						
-						revProps.splice( propIdx, 1 );
-					}
-					
-					return true;
-				};
-				
-				revProps.search = function( ctxt, prop ) {
-					for ( var i in this ) {
-						if ( this[ i ].ctxt === ctxt && this[ i ].prop === prop )
-							return i;
-					}
-					
-					return undefined;
-				};
-				
-			var reactPaths = [];
-				
-				reactPaths.inCtxtProp = function( path ) {
-					var o = path[ 1 ].valueOf(),
-						p,
-						i = 2,
-						l = path.length-1;
-					
-					while ( i<l )
-						o = o[ path[ i++ ].valueOf() ];
-					
-					p = path[ i ].valueOf();
-					
-					return {
-						ctxt : o,
-						prop : p,
-					};
-				};
-				
-				reactPaths.search = function( path ) {
-					var i = this.length;
-					while ( i-- ) {
-						if ( equiv( path, this[ i ].path ) ) {
-							return this[ i ];
-						}
-					}
-					
-					return undefined;
-				};
-				
-				reactPaths.set = function( path, val, del, rev ) {
-					var pathObj,
-						i = this.length;
-					
-					while ( i-- ) {
-						if ( equiv( path, this[ i ].path ) ) {
-							break;
-						}
-					}
-					
-					if ( i < 0 ) {
-						//path is new; add it to list and bind handler
-						pathObj = {
-							path : path,
-							val  : val,
-							del  : del,
-							rev  : rev
-						};
-						
-						this.push( pathObj );
-					
-					} else {
-						//path is known
-						pathObj = this[ i ];
-						
-						//unbind value handlers
-						if ( pathObj.val && ( pathObj.val._isVar || pathObj.val._isExprArray ) )
-							FunctionCall.prototype.remove( updateProp, [ pathObj.path, pathObj.val ] );
-						else
-							FunctionCall.prototype.remove( updateProp, [ path ] );
-						
-						//update values
-						pathObj.val = val;
-						pathObj.del = del;
-						pathObj.rev = rev;
-					}
-					
-					//check, if new value is reactive
-					if ( val && ( val._isVar || val._isExprArray ) )
-						FunctionCall( updateProp, [ path, val ] );
-					else
-						FunctionCall( updateProp, [ path ] );
-					
-					return pathObj;
-				};
-				
-				reactPaths.rmv = function( path ) {
-					var i = this.length,
-						key;
-					
-					while ( i-- ) {
-						if ( equiv( path, this[ i ].path ) ) {
-							var pathObj = this[ i ];
-							
-							if ( pathObj.val && ( pathObj.val._isVar || pathObj.val._isExprArray ) )
-								FunctionCall.prototype.remove( updateProp, [ pathObj.path, pathObj.val ] );
-							else
-								FunctionCall.prototype.remove( updateProp, [ path ] );
-							
-							this.splice( i, 1 );
-							
-							return pathObj;
-						}
-					}
-				};
-			
 			operator( "=", "assignment", 10, null, function( v, val, interpreter ) {
 				if ( !v || ( !v._isVar && v.id !== "(id)" && !v._propAccess ) )
 					error( "Bad lvalue: no variable or object property." );
@@ -963,30 +752,18 @@
 				assignTo = null;	//extern variable to keep track of assignments
 				
 				if ( v._propAccess ) {
-					//used for setting object properties
-					var ctxtProp = reactPaths.inCtxtProp( v );
-					
-					//test literal object property path
-					var i = v.length || 1;
-					while( --i ) {
-						if ( v[ i ] && ( v[ i ]._isVar || v[ i ]._isExprArray ) )
-							break;
-					}
-					
-					if ( i )	//complex path
-						reactPaths.set( v, val, false, false );
-					
-					//test for reactive value
-					if ( val && ( val._isVar || val._isExprArray ) ) {
-						if ( !i )
-							reactPaths.set( v, val, false, false );
+					if ( isEmptyObj( v._dep ) && ( !val || ( !val._isVar && !val._isExprArray && !val._isCall && !val._isPath ) ) ) {
+						//literals only array
+						var ctxt, i, l;
 						
-						val = val.valueOf();
-					} else if ( !i ) {
-						reactPaths.rmv( v );
+						ctxt = v[ 1 ];
+						for ( i = 2, l = v.length-1; i<l; i++ )
+							ctxt = ctxt[ v[ i ] ];
+						
+						return ctxt[ v[ l ] ] = val;
 					}
 					
-					return ctxtProp.ctxt[ ctxtProp.prop ] = val;
+					return PropPath( v, false, val, false )._val;
 				}
 				
 				return interpreter.nameTable.set( v._key || v.value, val );
@@ -1092,9 +869,7 @@
 				if ( !path || !path._propAccess )
 					error( "Bad lvalue: no object property." );
 				
-				var ctxtProp = reactPaths.inCtxtProp(path );
-				
-				return revProps.set( ctxtProp.ctxt, ctxtProp.prop, reactPaths.set( path, val, false, true ) );
+				return PropPath( path, true, val, false );
 			} );
 			
 			operator( "?", "infix", 20, null, ( function() {
@@ -1487,6 +1262,7 @@
 					addSums = function( fst, snd ) {
 						var res,
 							fst_sel, snd_sel,
+							fst_lit, snd_lit,
 							fst_num, snd_num,
 							fst_idx, snd_idx,
 							fst_len, snd_len,
@@ -1501,190 +1277,197 @@
 						
 						SNDLOOP : while ( snd_idx < snd_len && snd_sel !== snd ) {
 							snd_sel = snd_isOpArray ? snd[ ++snd_idx ] : snd;
-							snd_num = typeof snd_sel === "number";
+							snd_lit = typeof snd_sel;
+							snd_num = snd_lit === "number";
+							snd_lit = snd_num || snd_lit === "string";
 							
-							fst_idx = fst_len;
-							while ( fst_idx > 1 && fst_sel !== fst ) {
-								fst_sel = fst_isOpArray ? fst[ --fst_idx ] : fst;
-								fst_num = typeof fst_sel === "number";
-								
-								if ( snd_num ) {
-									if ( !fst_num )
-										continue;
+							//do not factor out, if we are dealing with two
+							//opArrays or one is opArray and the other a ref
+							if ( ( !fst_isOpArray && snd_sel !== fst ) || snd_num || ( !snd_isOpArray && snd.constructor === Array ) ) {
+								fst_idx = fst_len;
+								while ( fst_idx > 1 && fst_sel !== fst ) {
+									fst_sel = fst_isOpArray ? fst[ --fst_idx ] : fst;
+									fst_lit = typeof fst_sel;
+									fst_lit = fst_lit === "number" || fst_lit === "string";
 									
-									fst_sel += snd_sel;
-									
-									if ( fst_isOpArray ) {
-										if ( fst_sel !== 0 ) {
-											fst[ fst_idx ] = fst_sel;
+									if ( snd_lit ) {
+										if ( !fst_lit )
+											continue;
 										
-										} else {
-											if ( fst.length > 3 ) {
-												fst.splice( fst_idx, 1 );
+										fst_sel += snd_sel;
+										
+										if ( fst_isOpArray ) {
+											if ( fst_sel !== 0 ) {
+												fst[ fst_idx ] = fst_sel;
+											
 											} else {
-												fst = fst_idx === 2 ? fst[ 1 ] : fst[ 2 ];
-												fst_isOpArray = false;
-											}
-										}
-									
-									} else {
-										fst = fst_sel;
-									}
-									
-									continue SNDLOOP;
-								
-								} else {
-									if ( fst_num )
-										continue;
-									
-									res = factorOutProducts.call( this, fst_sel, snd_sel );
-									
-									if ( res.front !== 1 || res.back !== 1 ) {
-										var sum = operators[ "+" ].ledEval.call( this, res.fst, res.snd );
-										
-										if ( sum === 0 ) {
-											if ( fst_isOpArray ) {
 												if ( fst.length > 3 ) {
 													fst.splice( fst_idx, 1 );
-													fst._checkDep( fst_sel );
 												} else {
 													fst = fst_idx === 2 ? fst[ 1 ] : fst[ 2 ];
 													fst_isOpArray = false;
 												}
-											
-											} else {
-												fst = 0;
-											}
-											
-											continue SNDLOOP;
-										
-										} else if ( res.front !== 1 && res.back !== 1 ) {
-											//shared front and back
-											//reuse existing arrays
-											if ( res.front._isValArray && res.front[ 0 ] === "*" ) {
-												fst_sel = res.front;
-												
-												if ( sum._isValArray && sum[ 0 ] === "*" ) {
-													sum.shift();
-													fst_sel.push.apply( sum );
-													fst_sel.addDep( sum._dep )
-												} else {
-													if ( sum._isValArray )
-														fst_sel.push( sum );
-													else
-														fst_sel.splice( 1, 0, sum );
-													
-													fst_sel.addDep( sum )
-												}
-												
-												if ( res.back._isValArray && res.back[ 0 ] === "*" ) {
-													res.back.shift();
-													fst_sel.push.apply( res.back );
-													fst_sel.addDep( res.back._dep )
-												} else {
-													fst_sel.push( res.back );
-													fst_sel.addDep( res.back )
-												}
-											
-											} else if ( sum._isValArray && sum[ 0 ] === "*" ) {
-												fst_sel = sum;
-												
-												fst_sel.splice( 1, 0, res.front );
-												fst_sel.addDep( res.front )
-												
-												if ( res.back._isValArray && res.back[ 0 ] === "*" ) {
-													res.back.shift();
-													fst_sel.push.apply( res.back );
-													fst_sel.addDep( res.back._dep )
-												} else {
-													fst_sel.push( res.back );
-													fst_sel.addDep( res.back )
-												}
-											
-											} else if ( res.back._isValArray && res.back[ 0 ] === "*" ) {
-												fst_sel = res.back;
-												
-												fst_sel.splice( 1, 0, res.front, sum );
-												fst_sel.addDep( res.front, sum )
-											
-											} else {
-												fst_sel = makeExprArray(
-													[ "*", sum._isValArray ? res.front : sum, sum._isValArray ? sum : res.front, res.back ],
-													res.front._isExprArray ? res.front._dep : res.front,
-													sum._isExprArray 	  ? sum._dep : sum,
-													res.back._isExprArray  ? res.back._dep : res.back
-												);
 											}
 										
-										} else if ( res.front !== 1 ) {
-											//shared front only
-											//reuse existing arrays
-											if ( res.front._isValArray && res.front[ 0 ] === "*" ) {
-												fst_sel = res.front;
-												
-												if ( sum._isValArray && sum[ 0 ] === "*" ) {
-													sum.shift();
-													fst_sel.push.apply( sum );
-													fst_sel.addDep( sum._dep )
-												} else {
-													if ( sum._isValArray )
-														fst_sel.push( sum );
-													else
-														fst_sel.splice( 1, 0, sum );
-													
-													fst_sel.addDep( sum )
-												}
-											
-											} else if ( sum._isValArray && sum[ 0 ] === "*" ) {
-												fst_sel = sum;
-												
-												fst_sel.splice( 1, 0, res.front );
-												fst_sel.addDep( res.front )
-											
-											} else {
-												fst_sel = makeExprArray(
-													[ "*", sum._isValArray ? res.front : sum, sum._isValArray ? sum : res.front ],
-													res.front._isExprArray ? res.front._dep : res.front,
-													sum._isExprArray 	  ? sum._dep : sum
-												);
-											}
-										
-										} else if ( res.back !== 1 ) {
-											//shared back only
-											//reuse existing arrays
-											if ( sum._isValArray && sum[ 0 ] === "*" ) {
-												fst_sel = sum;
-												
-												if ( res.back._isValArray && res.back[ 0 ] === "*" ) {
-													res.back.shift();
-													fst_sel.push.apply( res.back );
-													fst_sel.addDep( res.back._dep )
-												} else {
-													fst_sel.push( res.back );
-													fst_sel.addDep( res.back )
-												}
-											
-											} else if ( res.back._isValArray && res.back[ 0 ] === "*" ) {
-												fst_sel = res.back;
-												
-												fst_sel.splice( 1, 0, sum );
-												fst_sel.addDep( sum )
-											
-											} else {
-												fst_sel = makeExprArray(
-													[ "*", sum, res.back ],
-													sum._isExprArray 	 ? sum._dep : sum,
-													res.back._isExprArray ? res.back._dep : res.back
-												);
-											}
+										} else {
+											fst = fst_sel;
 										}
 										
-										if ( fst_isOpArray )
-											fst[ fst_idx ] = fst_sel;
-										else
-											fst = fst_sel;
-										
 										continue SNDLOOP;
+									
+									} else {
+										if ( fst_lit )
+											continue;
+										
+										res = factorOutProducts.call( this, fst_sel, snd_sel );
+										
+										if ( res.front !== 1 || res.back !== 1 ) {
+											var sum = operators[ "+" ].ledEval.call( this, res.fst, res.snd );
+											
+											if ( sum === 0 ) {
+												if ( fst_isOpArray ) {
+													if ( fst.length > 3 ) {
+														fst.splice( fst_idx, 1 );
+														fst._checkDep( fst_sel );
+													} else {
+														fst = fst_idx === 2 ? fst[ 1 ] : fst[ 2 ];
+														fst_isOpArray = false;
+													}
+												
+												} else {
+													fst = 0;
+												}
+												
+												continue SNDLOOP;
+											
+											} else if ( res.front !== 1 && res.back !== 1 ) {
+												//shared front and back
+												//reuse existing arrays
+												if ( res.front._isValArray && res.front[ 0 ] === "*" ) {
+													fst_sel = res.front;
+													
+													if ( sum._isValArray && sum[ 0 ] === "*" ) {
+														sum.shift();
+														fst_sel.push.apply( sum );
+														fst_sel.addDep( sum._dep )
+													} else {
+														if ( sum._isValArray )
+															fst_sel.push( sum );
+														else
+															fst_sel.splice( 1, 0, sum );
+														
+														fst_sel.addDep( sum )
+													}
+													
+													if ( res.back._isValArray && res.back[ 0 ] === "*" ) {
+														res.back.shift();
+														fst_sel.push.apply( res.back );
+														fst_sel.addDep( res.back._dep )
+													} else {
+														fst_sel.push( res.back );
+														fst_sel.addDep( res.back )
+													}
+												
+												} else if ( sum._isValArray && sum[ 0 ] === "*" ) {
+													fst_sel = sum;
+													
+													fst_sel.splice( 1, 0, res.front );
+													fst_sel.addDep( res.front )
+													
+													if ( res.back._isValArray && res.back[ 0 ] === "*" ) {
+														res.back.shift();
+														fst_sel.push.apply( res.back );
+														fst_sel.addDep( res.back._dep )
+													} else {
+														fst_sel.push( res.back );
+														fst_sel.addDep( res.back )
+													}
+												
+												} else if ( res.back._isValArray && res.back[ 0 ] === "*" ) {
+													fst_sel = res.back;
+													
+													fst_sel.splice( 1, 0, res.front, sum );
+													fst_sel.addDep( res.front, sum )
+												
+												} else {
+													fst_sel = makeExprArray(
+														[ "*", sum._isValArray ? res.front : sum, sum._isValArray ? sum : res.front, res.back ],
+														res.front._isExprArray ? res.front._dep : res.front,
+														sum._isExprArray 	  ? sum._dep : sum,
+														res.back._isExprArray  ? res.back._dep : res.back
+													);
+												}
+											
+											} else if ( res.front !== 1 ) {
+												//shared front only
+												//reuse existing arrays
+												if ( res.front._isValArray && res.front[ 0 ] === "*" ) {
+													fst_sel = res.front;
+													
+													if ( sum._isValArray && sum[ 0 ] === "*" ) {
+														sum.shift();
+														fst_sel.push.apply( sum );
+														fst_sel.addDep( sum._dep )
+													} else {
+														if ( sum._isValArray )
+															fst_sel.push( sum );
+														else
+															fst_sel.splice( 1, 0, sum );
+														
+														fst_sel.addDep( sum )
+													}
+												
+												} else if ( sum._isValArray && sum[ 0 ] === "*" ) {
+													fst_sel = sum;
+													
+													fst_sel.splice( 1, 0, res.front );
+													fst_sel.addDep( res.front )
+												
+												} else {
+													fst_sel = makeExprArray(
+														[ "*", sum._isValArray ? res.front : sum, sum._isValArray ? sum : res.front ],
+														res.front._isExprArray ? res.front._dep : res.front,
+														sum._isExprArray 	  ? sum._dep : sum
+													);
+												}
+											
+											} else if ( res.back !== 1 ) {
+												//shared back only
+												//reuse existing arrays
+												if ( sum._isValArray && sum[ 0 ] === "*" ) {
+													fst_sel = sum;
+													
+													if ( res.back._isValArray && res.back[ 0 ] === "*" ) {
+														res.back.shift();
+														fst_sel.push.apply( res.back );
+														fst_sel.addDep( res.back._dep )
+													} else {
+														fst_sel.push( res.back );
+														fst_sel.addDep( res.back )
+													}
+												
+												} else if ( res.back._isValArray && res.back[ 0 ] === "*" ) {
+													fst_sel = res.back;
+													
+													fst_sel.splice( 1, 0, sum );
+													fst_sel.addDep( sum )
+												
+												} else {
+													fst_sel = makeExprArray(
+														[ "*", sum, res.back ],
+														sum._isExprArray 	 ? sum._dep : sum,
+														res.back._isExprArray ? res.back._dep : res.back
+													);
+												}
+											}
+											
+											if ( fst_isOpArray )
+												fst[ fst_idx ] = fst_sel;
+											else
+												fst = fst_sel;
+											
+											continue SNDLOOP;
+										}
 									}
 								}
 							}
@@ -1738,8 +1521,8 @@
 						return makeExprArray( swap ? [ "+", lit, ref ] : [ "+", ref, lit ], ref );
 					},
 					ref : function( ref1, ref2 ) {
-						if ( ref1 === ref2 )
-							return makeExprArray( [ "*", 2, ref1 ], ref1 );
+						//if ( ref1 === ref2 )
+						//	return makeExprArray( [ "*", 2, ref1 ], ref1 );
 						
 						return makeExprArray( [ "+", ref1, ref2 ], ref1, ref2 );
 					},
@@ -2169,28 +1952,23 @@
 			} );
 			
 			operator( "delete", "delete", 90, null, function( v, interpreter ) {
-				if ( !v || ( !v._isVar && !v._isValArray && v.id !== "(id)" && !v._propAccess ) )
+				if ( !v || ( !v._isVar && v.id !== "(id)" && !v._propAccess ) )
 					error( "Bad lvalue: no variable or object property." );
 				
 				if ( v._propAccess ) {
-					//used for deleting object properties
-					var ctxtProp = reactPaths.inCtxtProp( v );
-					
-					//check for literal object property path
-					var i = v.length || 1;
-					while( --i ) {
-						if ( v[ i ] && ( v[ i ]._isVar || v[ i ]._isExprArray ) )
-							break;
+					if ( isEmptyObj( v._dep ) ) {
+						//literals only array
+						var ctxt, i, l;
+						
+						ctxt = v[ 1 ];
+						for ( i = 2, l = v.length-1; i<l; i++ )
+							ctxt = ctxt[ v[ i ] ];
+						
+						return delete ctxt[ v[ l ] ];
 					}
 					
-					if ( i )	//complex path
-						reactPaths.set( v, undefined, true, false );
-					
-					return delete ctxtProp.ctxt[ ctxtProp.prop ];
+					return PropPath( v, false, undefined, true );
 				}
-				
-				if ( v._isValArray )
-					return v[ "delete" ]();
 				
 				return interpreter.nameTable[ "delete" ]( v._key || v.value );
 			} );
@@ -2199,24 +1977,19 @@
 				if ( !path || !path._propAccess )
 					error( "Bad lvalue: no object property." );
 				
-				var ctxtProp = reactPaths.inCtxtProp( path );
-				
-				return revProps.set( ctxtProp.ctxt, ctxtProp.prop, reactPaths.set( path, undefined, true, true ) );
+				return PropPath( path, true, undefined, true );
 			} );
 			
 			operator( "~", "prefix", 90, null, function( path ) {
 				if ( !path || !path._propAccess )
 					error( "Bad lvalue: no reactive object property." );
 				
-				var ctxtProp = reactPaths.inCtxtProp( path );
-
-				//find path
-				var pathObj = reactPaths.rmv( path );
+				var pathObj = PropPath.prototype._search( path );
 				
-				if ( !pathObj ) //path was not registered
+				if ( pathObj === undefined ) //path was not registered
 					return false;
 				
-				return revProps.rev( ctxtProp.ctxt, ctxtProp.prop, pathObj );
+				return pathObj.rmv();
 			} );
 			
 			operator( "#", "prefix", 90, null, {
@@ -2251,7 +2024,7 @@
 				function( v, ctxt ) {
 					var idx;
 					
-					if ( !v._isVar && !v._isExprArray )
+					if ( !v._isVar && !v._isExprArray && !v._isFunc )
 						error( "{ must be preceeded by a variable or expression!" );
 					
 					if ( ctxt && ctxt._isValArray && ctxt[ 0 ] === "," ) {
@@ -2270,8 +2043,12 @@
 						ctxt = [ ctxt ];
 					}
 					
-					if ( ctxt )
-						v = v.inCtxt( ctxt );
+					if ( ctxt ) {
+						if ( v._isFunc )
+							v._context = ctxt;
+						else
+							v = v.inCtxt( ctxt );
+					}
 					
 					return v;
 				}
@@ -2319,7 +2096,7 @@
 					argsArr = args !== undefined ? [ args ] : args;
 				}
 				
-				return FunctionCall( func, argsArr, true );
+				return FunctionCall( func, argsArr, true ) ? true : false;
 			} );
 			
 			operator( "~(", "call", 100, null, function( func, args ) {
@@ -2350,10 +2127,16 @@
 						
 						return obj[ prop ];
 					},
-					ref :function( obj, prop ) {
+					ref : function( obj, prop ) {
 						return makeExprArray( [ ".", obj, prop ], prop );
 					},
-					arr :function( obj, prop ) {
+					arr : function( obj, prop ) {
+						if ( prop[ 0 ] === "." ) {
+							var pathObj = PropPath.prototype._search( prop );
+							if ( pathObj !== undefined )
+								return makeExprArray( [ ".", obj, prop ], pathObj );
+						}
+						
 						return makeExprArray( [ ".", obj, prop ], prop._dep );
 					}
 				},
@@ -2364,10 +2147,16 @@
 						
 						return makeExprArray( [ ".", obj, prop ], obj );
 					},
-					ref :function( obj, prop ) {
+					ref : function( obj, prop ) {
 						return makeExprArray( [ ".", obj, prop ], obj, prop );
 					},
-					arr :function( obj, prop ) {
+					arr : function( obj, prop ) {
+						if ( prop[ 0 ] === "." ) {
+							var pathObj = PropPath.prototype._search( prop );
+							if ( pathObj !== undefined )
+								return makeExprArray( [ ".", obj, prop ], pathObj );
+						}
+						
 						return makeExprArray( [ ".", obj, prop ], obj, prop._dep );
 					}
 				},
@@ -2383,7 +2172,7 @@
 						
 						return makeExprArray( [ ".", obj, prop ], obj._dep );
 					},
-					ref :function( obj, prop ) {
+					ref : function( obj, prop ) {
 						if ( obj[ 0 ] === "." ) {
 							obj.addDep( prop ).push( prop );
 							return obj;
@@ -2391,7 +2180,13 @@
 						
 						return makeExprArray( [ ".", obj, prop ], obj._dep, prop );
 					},
-					arr :function( obj, prop ) {
+					arr : function( obj, prop ) {
+						if ( prop[ 0 ] === "." ) {
+							var pathObj = PropPath.prototype._search( prop );
+							if ( pathObj !== undefined )
+								return makeExprArray( [ ".", obj, prop ], pathObj );
+						}
+						
 						if ( obj[ 0 ] === "." ) {
 							obj.addDep( prop._dep ).push( prop );
 							return obj;
@@ -2540,8 +2335,20 @@
 						}
 					}
 					
+					if ( typeof expr.o.first === "function" )
+						expr.o.first._isFunc = true;
+					
+					if ( typeof expr.o.second === "function" )
+						expr.o.second._isFunc = true;
+					
 					//evaluate expression
 					parent.o[ parent.p ] = ( expr.o.nudEval || expr.o.ledEval ).call( expr, expr.o.first, expr.o.second, this );
+					
+					if ( expr.o.first && expr.o.first._isFunc )
+						delete expr.o.first._isFunc;
+					
+					if ( expr.o.second && expr.o.second._isFunc )
+						delete expr.o.second._isFunc;
 					
 					return parent;
 				},
@@ -2626,6 +2433,9 @@
 									break;
 								
 								if ( newExpr && !expr.parent ) {
+									if ( ret.value._isExprArray )
+										ret.value.unlinkCalls();
+									
 									ret.value = undefined;
 									newExpr = false;
 								}
@@ -2949,6 +2759,9 @@
 								error( ret.value.value + " is not defined." );
 							
 							ret.value = this.nameTable.table[ ret.value.value ];
+						
+						} else if ( ret.value._isExprArray ) {
+							ret.value.unlinkCalls();
 						}
 					}
 					
@@ -3055,14 +2868,58 @@
 						error( "Variable.toString: " + e.message );
 					}
 				},
-				_prevValueOf : function( ctxt, data ) {
-					return  "_prev" in this ? 
-							( this._prev && this._prev._prevValueOf ?
-								this._prev._prevValueOf( ctxt, data ) :
-								this._prev ) :
-							this._value && this._value._prevValueOf ?
-								this._value._prevValueOf( ctxt, data ) :
-								this._value;
+				_prevValueOf : function() {
+					try {
+						var idx, context, value, valueOf;
+						
+						if ( "_prev" in this ) {
+							value = this._prev;
+							valueOf = "_prevValueOf";
+						} else {
+							value = this._value;
+							valueOf = "valueOf";
+						}
+						
+						if ( !this._context && arguments.length ) {
+							if ( typeof value === "function" ) {
+								context = [];
+								idx = arguments.length;
+								while( idx-- )
+									context[ idx ] = arguments[ idx ].valueOf();
+								
+								return value.apply( null, context );
+							
+							} else if ( value && value._prevValueOf )
+								return value._prevValueOf.apply( value, arguments );
+							
+							else
+								return value;
+						}
+						
+						if ( this._context ) {
+							if ( typeof value === "function" ) {
+								context = [];
+								idx = this._context.length;
+								while( idx-- )
+									context[ idx ] = this._context[ idx ].valueOf();
+								
+								return value.apply( null, context );
+							
+							} else if ( value && value._prevValueOf )
+								return value._prevValueOf.apply( value, this._context );
+							
+							else
+								return value;
+						
+						} else if ( value && value._prevValueOf )
+							return value._prevValueOf();
+						
+						else
+							return value;
+					
+					} catch( e ) {
+						error( "Variable._prevValueOf: " + e.message );
+					}
 				},
 				
 				invalidate : function( from ) {
@@ -3078,8 +2935,16 @@
 				set : function( val ) {
 					var id;
 					
-					if ( val && this._value === val )
+					if ( val && this._value === val ) {
+						if ( val._isFunc && val._context ) {
+							this._context = val._context;
+							delete val._context;
+						} else {
+							delete this._context;
+						}
+						
 						return this;
+					}
 					
 					//save previous value temporarily, so invalidation has access to it, if necessary
 					this._prev = this._value;
@@ -3092,9 +2957,9 @@
 					
 					if ( val ) {
 						//set new dependency
-						if ( val && val._dep )
+						if ( val._dep )
 							this._dep = val._dep;
-						else if ( val && val._isCall )
+						else if ( val._isCall )
 							this._dep = val;
 						else
 							delete this._dep;
@@ -3103,11 +2968,15 @@
 							val._makeVar();
 						
 						//set context
-						if ( val._context ) {
-							this._context = val._context;
-							delete val._context;
-						} else {
-							delete this._context;
+						delete this._context;
+						
+						if ( val._isFunc ) {
+							delete val._isFunc;
+							
+							if ( val._context ) {
+								this._context = val._context;
+								delete val._context;
+							}
 						}
 					}
 					
@@ -3285,9 +3154,8 @@
 					c._partOf = {};
 					c._evalArgs = !!evalArgs;
 					
-					//don't track changes of function or arguments, if:
-					// - tracking is explicitly turned of by dontTrack
-					// - the function acts as a constructor
+					//don't track changes of function or arguments,
+					//if tracking is explicitly turned of by dontTrack
 					if ( !dontTrack )
 						c.link();
 					
@@ -3370,7 +3238,7 @@
 					while ( j-- ) {
 						//check, if this._args[ i ] depends on update
 						outOfDate = false;
-						if ( !( "j" in this._argLits ) ) {
+						if ( !( j in this._argLits ) ) {
 							outOfDate = true;
 						
 						} else if ( this._args[ j ]._isExprArray ) {
@@ -3428,19 +3296,32 @@
 				
 				unlink : function() {
 					var rmvPartOf = function( v ) {
-						delete v._partOf[ this._guid ];
-					};
+							delete v._partOf[ this._guid ];
+						},
+						rmvPartOfExpr = function( v ) {
+							delete v._partOf[ this._guid ];
+							
+							if ( v._isCall )
+								v.unlink();
+						};
 					
 					//remove partOf on functions side
-					doWithReactive.call( this, this._func, rmvPartOf );
+					if ( this._func && this._func._isCall )
+						this._func.unlink();
+					else
+						doWithReactive.call( this, this._func, rmvPartOf, rmvPartOfExpr );
 					
 					//remove partOf on arguments' side
 					if ( !this._args )
 						return;
 					
 					var i = this._args.length;
-					while ( i-- )
-						doWithReactive.call( this, this._args[ i ], rmvPartOf );
+					while ( i-- ) {
+						if ( this._args[ i ]._func && this._args[ i ]._isCall )
+							this._args[ i ].unlink();
+						else
+							doWithReactive.call( this, this._args[ i ], rmvPartOf, rmvPartOfExpr );
+					}
 				},
 				
 				remove : function( func, args ) {
@@ -3485,6 +3366,190 @@
 					delete call._partOf;
 					
 					return true;
+				}
+			};
+			
+			var PropPath = function( path, rev, val, del ) {
+				var p = PropPath.prototype._search( path );
+				if ( p === undefined ) {
+					p = this instanceof PropPath ? this : Object.create( PropPath.prototype );
+					
+					p._guid = "#p" + PropPath.prototype._guid++;
+					PropPath.prototype._paths[ p._guid ] = p;
+					
+					p._partOf = {};
+					p._path = path;
+					p.linkPath();
+					
+					var i, l;
+					p._ctxt = path[ 1 ].valueOf();
+					for ( i = 2, l = path.length-1; i<l; i++ )
+						p._ctxt = p._ctxt[ path[ i ].valueOf() ];
+					
+					p._prop = path[ l ].valueOf();
+				}
+				
+				p.unlinkVal();
+				p._val = val;
+				p.linkVal();
+				
+				p._valEvaled = val && val.valueOf();
+				p._del = del;
+				
+				if ( rev && !p._rev ) {
+					p._backupVal = p._ctxt[ p._prop ];
+					p._backupDel = p._prop in p._ctxt ? false : true;
+				}
+				
+				p._rev = rev;
+				
+				//set new object property value
+				if ( p._del )
+					delete p._ctxt[ p._prop ];
+				else
+					p._ctxt[ p._prop ] = p._valEvaled;
+				
+				for ( var id in p._partOf )
+					p._partOf[ id ].invalidate( p );
+				
+				return p;
+			};
+			
+			PropPath.prototype = {
+				_guid : 0,
+				
+				_path : null,
+				_ctxt  : null,
+				_prop : null,
+				_val  : null,
+				_valEvaled : null,
+				_del  : null,
+				_rev  : null,
+				
+				_backupVal : null,
+				_backupDel : null,
+				
+				_isPath : true,
+				_partOf : null,
+				
+				_paths : {},
+				_search : function( path ) {
+					for ( var id in PropPath.prototype._paths )
+						if ( equiv( path, PropPath.prototype._paths[ id ]._path ) )
+							return PropPath.prototype._paths[ id ];
+					
+					return undefined;
+				},
+				
+				_updatePath : function() {
+					//revert value of old path, if marked so
+					if ( this._rev ) {
+						if ( this._backupDel )
+							delete this._ctxt[ this._prop ];
+						else
+							this._ctxt[ this._prop ] = this._backupVal;
+					}
+					
+					//get new obj and prop
+					var i, l;
+					this._ctxt = this._path[ 1 ].valueOf();
+					for ( i = 2, l = this._path.length-1; i<l; i++ )
+						this._ctxt = this._ctxt[ this._path[ i ].valueOf() ];
+					
+					this._prop = this._path[ l ].valueOf();
+					
+					//get new backup values
+					this._backupVal = this._ctxt[ this._prop ];
+					this._backupDel = this._prop in this._ctxt ? false : true;
+					
+					//set object property value
+					if ( this._del )
+						delete this._ctxt[ this._prop ];
+					else
+						this._ctxt[ this._prop ] = this._valEvaled;
+				},
+				_updateValue : function() {
+					this._valEvaled = this._val.valueOf();
+					
+					//set new object property value
+					if ( this._del )
+						delete this._ctxt[ this._prop ];
+					else
+						this._ctxt[ this._prop ] = this._valEvaled;
+				},
+				linkVal : function() {
+					var setPartOf = function( v ) {
+						v._partOf[ this._guid ] = this;
+					};
+					
+					doWithReactive.call( this, this._val, setPartOf );
+				},
+				linkPath : function() {
+					var setPartOf = function( v ) {
+						v._partOf[ this._guid ] = this;
+					};
+					
+					doWithReactive.call( this, this._path, setPartOf );
+				},
+				unlinkVal : function() {
+					var rmvPartOf = function( v ) {
+							delete v._partOf[ this._guid ];
+						};
+					
+					//remove partOf on functions side
+					doWithReactive.call( this, this._val, rmvPartOf );
+				},
+				unlinkPath : function() {
+					var rmvPartOf = function( v ) {
+							delete v._partOf[ this._guid ];
+						};
+					
+					//remove partOf on functions side
+					doWithReactive.call( this, this._path, rmvPartOf );
+				},
+				rmv : function() {
+					//revert value of old path, if marked so
+					if ( this._rev ) {
+						if ( this._backupDel )
+							delete this._ctxt[ this._prop ];
+						else
+							this._ctxt[ this._prop ] = this._backupVal;
+					}
+					
+					this.unlinkVal();
+					this.unlinkPath();
+					
+					delete PropPath.prototype._paths[ this._guid ];
+					
+					delete this._guid;
+					delete this._path;
+					delete this._ctxt;
+					delete this._prop;
+					delete this._val;
+					delete this._del;
+					delete this._rev;
+					delete this._backupVal;
+					delete this._backupDel;
+					
+					return true;
+				},
+				invalidate : function( from ) {
+					var id, pathUpdate = false;
+					for ( id in this._path._dep )
+						if ( from === this._path._dep[ id ] ) {
+							pathUpdate = true;
+							break;
+						}
+					
+					if ( pathUpdate )
+						this._updatePath();
+					else
+						this._updateValue();
+					
+					for ( id in this._partOf )
+						this._partOf[ id ].invalidate( this );
+					
+					return this;
 				}
 			};
 			
@@ -3668,7 +3733,7 @@
 						
 						ret = interpret.apply( props, arguments );
 						
-						if ( ret && ( ret._isVar || ret._isExprArray || ret._isCall ) )
+						if ( ret && ( ret._isVar || ret._isCall || ret._isExprArray ) )
 							ret = ret.valueOf();
 						
 						return ret;

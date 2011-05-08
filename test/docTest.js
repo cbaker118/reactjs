@@ -114,7 +114,6 @@ test( "Change Propagation", function() {
 } );
 
 test( "Context sensitive variables", function() {
-	/*
 	//simple context example
 	var f = function( WhoIam ) {
 			return "My name is " + WhoIam + ".";
@@ -158,10 +157,9 @@ test( "Context sensitive variables", function() {
 	
 	react( "diet = food + ' for breakfast, ' + food + ' for lunch and ' + food + ' for supper'" );
 	ok( true, "react( \"diet = food + ' for breakfast, ' + food + ' for lunch and ' + food + ' for supper'\" )" );
-	
 	strictEqual( react( "jackiesDiet = diet{ 'yoghurt' }" ), "yoghurt for breakfast, yoghurt for lunch and yoghurt for supper", "react( \"jackiesDiet = diet{ 'yoghurt' }\" )" );
 	strictEqual( react( "tomsDiet = diet{ 'steak' }" ), "steak for breakfast, steak for lunch and steak for supper", "react( \"tomsDiet = diet{ 'steak' }\" )" );
-	strictEqual( react( "comilersDiet = diet" ), "function( food ){ [function body] } for breakfast, function( food ){ [function body] } for lunch and function( food ){ [function body] } for supper", "react( \"comilersDiet = diet\" )" );
+	strictEqual( react( "comilersDiet = diet" ), String( food ) + " for breakfast, " + String( food ) + " for lunch and " + String( food ) + " for supper", "react( \"comilersDiet = diet\" )" );
 	
 	//custom context example
 	var pattern = function( pattern ) {
@@ -183,7 +181,6 @@ test( "Context sensitive variables", function() {
 	strictEqual( react( "snake{ 'sand' }" ), "A snake looks like a snake in front of sand.", "react( \"snake{ 'sand' }\" )" );
 	
 	react( "clean" );
-	*/
 } );
 
 test( "Evaluation to a literal", function() {
@@ -255,6 +252,8 @@ test( "Introduction", function() {
 	//store the function in a reactive variable and call it
 	strictEqual( react( "doItLater =", LetsDoIt ), LetsDoIt, "react( \"doItLater =\", LetsDoIt )" );
 	strictEqual( react( "doItLater( 'Steak', 42 )" ), "Steak 42", "react( \"doItLater( 'Steak', 42 )\" )" );
+	
+	react( "clean" );
 } );
 
 test( "Basic reactive function call", function() {
@@ -334,37 +333,333 @@ test( "Basic reactive function call", function() {
 	strictEqual( dontCare, "Wanna be left alone?", "dontCare" );
 	ok( react( "beingNice = 'Ok, no problem!'" ), "react( \"beingNice = 'Ok, no problem!'\" )" );
 	strictEqual( dontCare, "Wanna be left alone?", "dontCare" );
+	
+	react( "clean" );
 } );
 
 test( "Deregistering function call", function() {
-
+	//invitation example
+	var niceInvitation = "",
+	    soonRetired = function( lastWords ) {
+			niceInvitation += lastWords;	
+		};
+	
+	ok( soonRetired, "soonRetired = function( lastWords ) { niceInvitation += lastWords; }" );
+	
+	ok( react( "words = 'Visit me!'" ), "react( \"words = 'Visit me!'\" )" );
+	ok( !react( soonRetired, "( words )" ), "!react( soonRetired, \"( words )\" )" );
+	strictEqual( niceInvitation, "Visit me!", "niceInvitation" );
+	
+	ok( react( "words = ' At the beach!'" ), "react( \"words = ' At the beach!'\" )" );
+	strictEqual( niceInvitation, "Visit me! At the beach!", "niceInvitation" );
+	
+	ok( !react( soonRetired, "~( words, ' But bring presents!' )" ), "trying to deregister with different arguments: react( soonRetired, \"~( words, ' But bring presents!' )\" )" );
+	ok( react( "words = ' Come soon!'" ), "react( \"words = ' Come soon!'\" )" );
+	strictEqual( niceInvitation, "Visit me! At the beach! Come soon!", "niceInvitation" );
+	
+	ok( react( soonRetired, "~( words )" ), "successful deregistration with same arguments: react( soonRetired, \"~( words )\" )" );
+	ok( react( "words = ' But bring presents!'" ), "react( \"words = ' But bring presents!'\" )" );
+	strictEqual( niceInvitation, "Visit me! At the beach! Come soon!", "niceInvitation" );
+	
+	//cactus example
+	react( "rainOnCactus =", function() {
+		return "The cactus is still there!";
+	} );
+	
+	ok( true, "react( \"rainOnCactus =\", function() { return \"The cactus is still there!\"; } );" );
+	strictEqual( react( "cactus = rainOnCactus()" ), "The cactus is still there!", "react( \"cactus = rainOnCactus()\" )" );
+	ok( !react( "rainOnCactus~()" ), "react( \"rainOnCactus~()\" )" );
+	strictEqual( react( "cactus" ), "The cactus is still there!", "react( \"cactus\" )" );
+	
+	//swearing example
+	var swearing = "",
+	    swear = function( syllable ) {
+			swearing += syllable;
+	    };
+	
+	ok( swear, "swear = function( syllable ) { speack += syllable; }" );
+	
+	ok( react( "dirtyWord = 'DAMN!'" ), "react( \"dirtyWord = 'DAMN!'\" )" );
+	react( swear, "( dirtyWord );", swear, "( dirtyWord )" );
+	strictEqual( swearing, "DAMN!DAMN!", "swearing" );
+	
+	ok( react( "dirtyWord = 'SH*T!'" ), "react( \"dirtyWord = 'SH*T!'\" )" );
+	strictEqual( swearing, "DAMN!DAMN!SH*T!SH*T!", "swearing" );
+	
+	ok( react( swear, "~( dirtyWord )" ), "react( swear, \"~( dirtyWord )\" )" );
+	ok( react( "dirtyWord = 'F*CK!'" ), "react( \"dirtyWord = 'F*CK!'\" )" );
+	strictEqual( swearing, "DAMN!DAMN!SH*T!SH*T!F*CK!", "swearing" );
+	
+	ok( react( swear, "~( dirtyWord )" ), "react( swear, \"~( dirtyWord )\" )" );
+	ok( react( "dirtyWord = 'DAMN!'" ), "react( \"dirtyWord = 'DAMN!'\" )" );
+	strictEqual( swearing, "DAMN!DAMN!SH*T!SH*T!F*CK!", "swearing" );
+	
+	react( "clean" );
 } );
 
 test( "Registering function call", function() {
-
+	//trip booking example
+	var booked = false,
+		bookTrip = function( salary ) {
+			booked = !booked;
+	    };
+	
+	ok( true, "bookTrip = function( salary ) { booked = true; }" );
+	
+	ok( react( "salary = 2000" ), "react( \"salary = 2000\" )" );
+	ok( react( bookTrip, ":( salary )" ), "react( bookTrip, \":( salary )\" )" );
+	strictEqual( booked, false, "booked" );
+	ok( react( "salary = 2500" ), "react( \"salary = 2500\" )" );
+	strictEqual( booked, true, "booked" );
+	ok( react( bookTrip, "~( salary )" ), "react( bookTrip, \"~( salary )\" )" );
+	ok( react( "salary = 3000" ), "react( \"salary = 3000\" )" );
+	strictEqual( booked, true, "booked" );
+	
+	//asking out example
+	var girl = "nobody",
+		decide = function( girl1, girl2 ) {
+			girl = "Zoey";
+		};
+	
+	ok( true, "decide = function( girl1, girl2 ) { girl = girl1; }" );
+	
+	ok( react( "Zoey = 'nice'; Jessi = 'cool'" ), "react( \"Zoey = 'nice'; Jessi = 'cool'\" )" );
+	ok( react( decide, ":( Zoey, Jessi )" ), "react( decide, \":( Zoey, Jessi )\" )" );
+	strictEqual( girl, "nobody", "girl" );
+	ok( react( "Jessi = 'cocky'" ), "react( \"Jessi = 'cocky'\" )" );
+	strictEqual( girl, "Zoey", "girl" );
+	ok( react( decide, "~( Zoey, Jessi )" ), "react( decide, \"~( Zoey, Jessi )\" )" );
+	ok( react( "Jessi = 'apologetic'" ), "react( \"Jessi = 'apologetic'\" )" );
+	strictEqual( girl, "Zoey", "girl" );
+	
+	react( "clean" );
 } );
 
 
 module( "Reactive variables and object properties" );
 
 test( "Introduction", function() {
-
+	var chameleon = {};
+	
+	ok( chameleon, "chameleon = {}" );
+	ok( react( chameleon, ".pattern = 'branches'" ), "react( chameleon, \".pattern = 'branches'\" )" );
+	
+	var jaguar = {};
+	ok( jaguar, "jaguar = {}" );
+	ok( react( "jaguar =", jaguar ), "react( \"jaguar =\", jaguar )" );
+	ok( react( "jaguar.colour = 'black'" ), "react( \"jaguar.colour = 'black'\" )" );
+	
+	react( "~", chameleon, ".pattern" );
+	react( "~jaguar.color" );
+	react( "clean" );
 } );
 
 test( "Basic assignment", function() {
-
+	//hunting example
+	var jaguar = {};
+	ok( jaguar, "jaguar = {}" );
+	ok( !react( "closeToPrey = false" ), "react( \"closeToPrey = false\" )" );
+	ok( react( "action = closeToPrey ? 'attacking' : 'stalking'" ), "react( \"action = closeToPrey ? 'attacking' : 'stalking'\" )" );
+	
+	ok( react( jaguar, ".action = action" ), "react( jaguar, \".action = action\" )" );
+	strictEqual( jaguar.action, 'stalking', "jaguar.action" );
+	
+	ok( react( "closeToPrey = true" ), "react( \"closeToPrey = true\" )" );
+	strictEqual( jaguar.action, 'attacking', "jaguar.action" );
+	
+	react( "~", jaguar, ".action" );
+	react( "clean" );
+	
+	//jaguar pattern exception example I
+	var jaguar = { pattern : 'entirely black' };
+	ok( jaguar, "jaguar = { pattern : 'entirely black' }" );
+	ok( react( "pattern = 'tawny-yellow with black spots'" ), "react( \"pattern = 'tawny-yellow with black spots'\" )" );
+	raises( function() { react( jaguar.pattern, " = pattern" ) }, "react( jaguar.pattern, \" = pattern\" )" );
+	
+	react( "clean" );
+	
+	//jaguar pattern exception example II
+	var jaguar = { pattern : 'entirely black' };
+	ok( jaguar, "jaguar = { pattern : 'entirely black' }" );
+	ok( react( "pattern = 'tawny-yellow with black spots'" ), "react( \"pattern = 'tawny-yellow with black spots'\" )" );
+	raises( function() { react( "jaguar.pattern = pattern" ) }, "react( \"jaguar.pattern = pattern\" )" );
+	
+	react( "clean" );
+	
+	//jaguar pattern object variable example
+	ok( react( "jaguar =", jaguar = { pattern : 'entirely black' } ), "react( \"jaguar =\", { pattern : 'entirely black' } )" );
+	ok( react( "pattern = 'tawny-yellow with black spots'" ), "react( \"pattern = 'tawny-yellow with black spots'\" )" );
+	ok( react( "jaguar.pattern = pattern" ), "react( \"jaguar.pattern = pattern\" )" );
+	strictEqual( jaguar.pattern, "tawny-yellow with black spots", "jaguar.pattern" );
+	
+	react( "~jaguar.pattern" );
+	react( "clean" );
+	
+	//jaguar/leopard example
+	var jaguar = { pattern : 'entirely black' },
+	    leopard = { pattern : 'white-yellow with black spots' };
+	
+	ok( jaguar, "jaguar = { pattern : 'entirely black' }" );
+	ok( leopard, "{ pattern : 'white-yellow with black spots' }" );
+	
+	ok( react( "cat =", jaguar ), "react( \"cat =\", jaguar )" );
+	ok( react( "cat.pattern = 'tawny-yellow with black spots'" ), "react( \"cat.pattern = 'tawny-yellow with black spots'\" )" );
+	strictEqual( jaguar.pattern, 'tawny-yellow with black spots', "jaguar.pattern" );
+	
+	ok( react( "cat = ", leopard ), "react( \"cat = \", leopard )" );
+	strictEqual( leopard.pattern, 'tawny-yellow with black spots', "leopard.pattern" );
+	
+	react( "~cat.pattern" );
+	react( "clean" );
+	
+	//child with paint example
+	var flat = {},
+	    child = { paintAtHands : true };
+	
+	ok( flat, "flat = {}" );
+	ok( child, "child = { paintAtHands : true }" );
+	
+	ok( react( "child =", child ), "react( \"child =\", child )" );
+	ok( react( "child.inRoom = 'kitchen'" ), "react( \"child.inRoom = 'kitchen'\" )" );
+	ok( react( flat, "[ child.inRoom ] = 'coloured'" ), "react( flat, \"[ child.inRoom ] = 'coloured'\" )" );
+	strictEqual( flat.kitchen, 'coloured', "flat.kitchen" );
+	
+	ok( react( "child.inRoom = 'living_room'" ), "react( \"child.inRoom = 'living_room'\" )" );
+	strictEqual( flat.living_room, 'coloured', "flat.living_room" );
+	
+	ok( react( "child.inRoom = 'bath'" ), "react( \"child.inRoom = 'bath'\" )" );
+	strictEqual( flat.bath, 'coloured', "flat.bath" );
+	
+	ok( react( "child.inRoom = 'bedroom'" ), "react( \"child.inRoom = 'bedroom'\" )" );
+	strictEqual( flat.bedroom, 'coloured', "flat.bedroom" );
+	
+	react( "~child.inRoom" );
+	react( "~", flat, "[ child.inRoom ]" );
+	react( "clean" );
 } );
 
 test( "Reversible assignment", function() {
-
+	var boys = {
+			'Jack' : 'friend',
+			'Brendan' : 'friend',
+			'Floyd' : 'friend'
+	    };
+	
+	ok( boys, "boys = { 'Jack' : 'friend', 'Brendan' : 'friend', 'Floyd' : 'friend' }" );
+	
+	ok( react( "name = 'Brendan'" ), "react( \"name = 'Brendan'\" )" );
+	ok( react( boys, "[ name ] ~= 'boyfriend'" ), "react( boys, \"[ name ] ~= 'boyfriend'\" )" );
+	strictEqual( boys.Brendan, 'boyfriend', "boys.Brendan" );
+	
+	ok( react( "name = 'Jack'" ), "react( \"name = 'Jack'\" )" );
+	strictEqual( boys.Brendan, 'friend', "boys.Brendan" );
+	strictEqual( boys.Jack, 'boyfriend', "boys.Jack" );
+	
+	ok( react( "name = 'Floyd'" ), "react( \"name = 'Floyd'\" )" );
+	strictEqual( boys.Jack, 'friend', "boys.Jack" );
+	strictEqual( boys.Floyd, 'boyfriend', "boys.Floyd" );
+	
+	react( "clean" );
 } );
 
 test( "Deregistering property updates", function() {
-
+	//bad listener example I
+	var badListener = {};
+	
+	ok( badListener, "badListener = {}" );
+	ok( react( "bodypart = 'ear'" ), "react( \"bodypart = 'ear'\" )" );
+	ok( react( badListener, "[ bodypart ] ~= 'voice'" ), "react( badListener, \"[ bodypart ] ~= 'voice'\" )" );
+	strictEqual( badListener.ear, 'voice', "badListener.ear" );
+	
+	ok( react( "bodypart = 'mouth'" ), "react( \"bodypart = 'mouth'\" )" );
+	strictEqual( badListener.mouth, 'voice', "badListener.mouth" );
+	ok( !("ear" in badListener), "!(\"ear\" in badListener)" );
+	
+	ok( react( "~", badListener, "[ bodypart ]" ), "react( \"~\", badListener, \"[ bodypart ]\" )" );
+	ok( react( "bodypart = 'ear'" ), "react( \"bodypart = 'ear'\" )" );
+	ok( !("mouth" in badListener), "!(\"mouth\" in badListener)" );
+	ok( !("ear" in badListener), "!(\"ear\" in badListener)" );
+	
+	react( "clean" );
+	
+	//bad listener example II
+	var badListener = {};
+	
+	ok( badListener, "badListener = {}" );
+	ok( react( "bodypart = 'earL'" ), "react( \"bodypart = 'earL'\" )" );
+	ok( react( badListener, "[ bodypart ] = 'Listen to me!'" ), "react( badListener, \"[ bodypart ] = 'Listen to me!'\" );" );
+	strictEqual( badListener.earL, "Listen to me!", "badListener.earL" );
+	
+	ok( !react( "~", badListener, ".bodypart" ), "react( \"~\", badListener, \".bodypart\" )" );
+	ok( react( "bodypart = 'earR'" ), "react( \"bodypart = 'earR'\" )" );
+	strictEqual( badListener.earR, "Listen to me!", "badListener.earR" );
+	
+	react( "~", badListener, "[ bodypart ]" );
+	ok( react( "bodypart = 'ears'" ), "react( \"bodypart = 'ears'\" )" );
+	ok( !( "ears" in badListener ), "badListener.ears" );
+	
+	react( "clean" );
+	
+	//bad listener example III
+	var badListener = { ear : false };
+	
+	ok( badListener, "badListener = { ear : false}" );
+	ok( react( "badListener = ", badListener ), "react( \"badListener = \", badListener )" );
+	ok( react( "badListener.ear ~= true" ), "react( \"badListener.ear = true\" )" );
+	strictEqual( badListener.ear, true, "badListener.ear" );
+	
+	ok( !react( "~", badListener, ".ear" ), "react( \"~\", badListener, \".ear\" )" );
+	strictEqual( badListener.ear, true, "badListener.ear" );
+	
+	ok( react( "~badListener[ 'ear' ]" ), "react( \"~badListener[ 'ear' ]\" )" );
+	strictEqual( badListener.ear, false, "badListener.ear" );
+	
+	react( "clean" );
 } );
 
 test( "Deletion", function() {
-
+	//autumn tree example
+	var autumnTree = {
+			leaf2516 : 'orange',
+			leaf5874 : 'red',
+			leaf9435 : 'yellow'
+		};
+	
+	ok( autumnTree, "autumnTree = { leaf2516 : 'orange', leaf5874 : 'red', leaf9435 : 'yellow' }" );
+	
+	ok( react( "leaf = 'leaf2516'" ), "react( \"leaf = 'leaf2516'\" )" );
+	ok( react( "delete", autumnTree, "[ leaf ]" ), "react( \"delete\", autumnTree, \"[ leaf ]\" )" );
+	ok( !("leaf2516" in autumnTree), "!(\"leaf2516\" in autumnTree)" );
+	
+	ok( react( "leaf = 'leaf5874'" ), "react( \"leaf = 'leaf5874'\" )" );
+	ok( !("leaf5874" in autumnTree), "!(\"leaf5874\" in autumnTree)" );
+	
+	ok( react( "~", autumnTree, "[ leaf ]" ), "react( \"~\", autumnTree, \"[ leaf ]\" )" );
+	
+	react( "leaf = 'leaf9435'" );
+	ok( "leaf9435" in autumnTree, "!(\"leaf9435\" in autumnTree)" );
+	
+	react( "clean" );
+	
+	//lizard example
+	var lizard = { tail : 'long', feet : 'short' };
+	
+	ok( lizard, "lizard = { tail : 'long', feet : 'short' }" );
+	
+	ok( react( "part = 'tail'" ), "react( \"part = 'tail'\" )" );
+	ok( react( "~delete", lizard, "[ part ]" ), "react( \"~delete\", lizard, \"[ part ]\" )" );
+	ok( !("tail" in lizard), "!(\"tail\" in lizard)" );
+	
+	ok( react( "part = 'feet'" ), "react( \"part = 'feet'\" )" );
+	strictEqual( lizard.tail, "long", "lizard.tail" );
+	ok( !("feet" in lizard), "!(\"feet\" in lizard)" );
+	
+	react( "~", lizard, "[ part ]" );
+	strictEqual( lizard.feet, "short", "lizard.feet" );
+	ok( react( "part = 'tail'" ), "react( \"part = 'tail'\" )" );
+	strictEqual( lizard.tail, "long", "lizard.tail" );
+	
+	react( "clean" );
 } );
 
 

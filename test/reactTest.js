@@ -825,7 +825,7 @@ test( "operator assignments", function() {
 	react( "rea ?= 'bar' : 'foo'" );
 	strictEqual( rea._value, "foo", "conditional assignment: react.leak( \"rea ?= 'bar' : 'foo'\" )._value === 'foo'" );
 	
-	react( "delete( (= rea + 'baz' ) + 5 )" );
+	react( "(= rea + 'baz' ) + 5" );
 	strictEqual( rea._value, "foobaz", "parenthesis assignment: react( \"(= rea + 'baz' ) + 5\" ), rea._value === 'foobaz'" );
 	
 	rea = react.leak( "delete= rea" );
@@ -1074,6 +1074,23 @@ test( "basic multiplication", function() {
 	ok( objContent( react.leak( "no partOf", "( one * y ) * ( 5 * x )" )._dep, [ one, y, x ] ), "react( \"( one * y ) * ( 5 * x )\" )._dep" );
 } );
 
+test( "string catenation", function() {
+	ok( equivArr( react.leak( "no partOf", "foo + foo" )._value, [ "+", foo, foo ] ), "foo + foo" );
+	ok( objContent( react.leak( "no partOf", "foo + foo" )._dep, [ foo ] ), "react( \"foo + foo\" )._dep" );
+	
+	ok( equivArr( react.leak( "no partOf", "foo + ( foo + bar )" )._value, [ "+", foo, foo, bar ] ), "foo + ( foo + bar )" );
+	ok( objContent( react.leak( "no partOf", "foo + ( foo + bar )" )._dep, [ foo, bar ] ), "react( \"foo + ( foo + bar )\" )._dep" );
+	
+	ok( equivArr( react.leak( "no partOf", "foo + ( bar + foo )" )._value, [ "+", foo, bar, foo ] ), "foo + ( bar + foo )" );
+	ok( objContent( react.leak( "no partOf", "foo + ( bar + foo )" )._dep, [ foo, bar ] ), "react( \"foo + ( bar + foo )\" )._dep" );
+	
+	ok( equivArr( react.leak( "no partOf", "( foo + bar ) + foo" )._value, [ "+", foo, bar, foo ] ), "( foo + bar ) + foo" );
+	ok( objContent( react.leak( "no partOf", "( foo + bar ) + foo" )._dep, [ foo, bar ] ), "react( \"( foo + bar ) + foo\" )._dep" );
+	
+	ok( equivArr( react.leak( "no partOf", "( bar + foo ) + foo" )._value, [ "+", bar, foo, foo ] ), "( bar + foo ) + foo" );
+	ok( objContent( react.leak( "no partOf", "( bar + foo ) + foo" )._dep, [ foo, bar ] ), "react( \"( bar + foo ) + foo\" )._dep" );
+} );
+
 test( "more addition: non-+-Arrays", function() {
 	ok( equivArr( react.leak( "no partOf", "( one * y ) + x" )._value, [ "+", [ "*", one, y ], x ] ), "arr + ref: react( \"( one * y ) + x\" )" );
 	ok( objContent( react.leak( "no partOf", "( one * y ) + x" )._dep, [ one, y, x ] ), "react( \"( one + y ) + x\" )._dep" );
@@ -1089,26 +1106,9 @@ test( "more addition: non-+-Arrays", function() {
 } );
 
 test( "more addition: factor out doubles", function() {
+	
 	ok( equivArr( react.leak( "no partOf", "( one + 5 ) + ( 5 + x )" )._value, [ "+", one, 10, x ] ), "( one + 5 ) + ( 5 + x ) = one + 10 + x" );
 	ok( objContent( react.leak( "no partOf", "( one + 5 ) + ( 5 + x )" )._dep, [ one, x ] ), "react( \"( one + 5 ) + ( 5 + x )\" )._dep" );
-	
-	ok( equivArr( react.leak( "no partOf", "x + x" )._value, [ "*", 2, x ] ), "x + x = 2*x" );
-	ok( objContent( react.leak( "no partOf", "x + x" )._dep, [ x ] ), "react( \"x + x\" )._dep" );
-	
-	ok( equivArr( react.leak( "no partOf", "( x * y ) + ( x * y )" )._value, [ "*", 2, x, y ] ), "( x * y ) + ( x * y ) = 2*x*y" );
-	ok( objContent( react.leak( "no partOf", "( x * y ) + ( x * y )" )._dep, [ x, y ] ), "react( \"( x * y ) + ( x * y )\" )._dep" );
-	
-	ok( equivArr( react.leak( "no partOf", "x + ( x + y )" )._value, [ "+", [ "*", 2, x ], y ] ), "x + ( x + y ) = 2*x + y" );
-	ok( objContent( react.leak( "no partOf", "x + ( x + y )" )._dep, [ x, y ] ), "react( \"x + ( x + y )\" )._dep" );
-	
-	ok( equivArr( react.leak( "no partOf", "x + ( y + x )" )._value, [ "+", [ "*", 2, x ], y ] ), "x + ( y + x ) = 2*x + y" );
-	ok( objContent( react.leak( "no partOf", "x + ( y + x )" )._dep, [ x, y ] ), "react( \"x + ( y + x )\" )._dep" );
-	
-	ok( equivArr( react.leak( "no partOf", "( x + y ) + x" )._value, [ "+", [ "*", 2, x ], y ] ), "( x + y ) + x = 2*x + y" );
-	ok( objContent( react.leak( "no partOf", "( x + y ) + x" )._dep, [ x, y ] ), "react( \"( x + y ) + x\" )._dep" );
-	
-	ok( equivArr( react.leak( "no partOf", "( y + x ) + x" )._value, [ "+", y, [ "*", 2, x ] ] ), "( y + x ) + x = y + 2*x" );
-	ok( objContent( react.leak( "no partOf", "( y + x ) + x" )._dep, [ x, y ] ), "react( \"( y + x ) + x\" )._dep" );
 } );
 	
 test( "more addition: factor out single + double", function() {	
@@ -1147,6 +1147,7 @@ test( "more addition: factor out double + double", function() {
 
 test( "subtraction", function() {
 	strictEqual( react.leak( "no partOf", "x - x" ), 0, "x - x = 0" );
+	
 	ok( react.leak( "no partOf", "(x + y) - y" ) === x, "( x + y ) - y = x" );
 	
 	ok( equivArr( react.leak( "no partOf", "( x + y + one ) - y" )._value, [ "+", x, one ] ), "( x + y + one ) - y = x + one" );
@@ -1234,7 +1235,7 @@ test( "more multiplication: factor out doubles", function() {
 	ok( equivArr( react.leak( "no partOf", "x * x" )._value, [ "^", x, 2 ] ), "x * x = x^2" );
 	ok( objContent( react.leak( "no partOf", "x * x" )._dep, [ x ] ), "react( \"x * x\" )._dep" );
 	
-	ok( equivArr( react.leak( "no partOf", "( x ^ y ) * ( x ^ y )" )._value, [ "^", x, [ "*", 2, y ] ] ), "( x ^ y ) * ( x ^ y ) = x^(2*y)" );
+	ok( equivArr( react.leak( "no partOf", "( x ^ y ) * ( x ^ y )" )._value, [ "^", x, [ "+", y, y ] ] ), "( x ^ y ) * ( x ^ y ) = x^(2*y)" );
 	ok( objContent( react.leak( "no partOf", "( x ^ y ) * ( x ^ y )" )._dep, [ x, y ] ), "react( \"( x ^ y ) * ( x ^ y )\" )._dep" );
 	
 	ok( equivArr( react.leak( "no partOf", "x * ( x * y )" )._value, [ "*", [ "^", x, 2 ], y ] ), "x * ( x * y ) = x^2 * y" );
@@ -1700,8 +1701,7 @@ test( "permanent property assignment: object literal, property valueArray", func
 	ok( obj, "obj = { foo : \"foo\" }" );
 	
 	ok( react( "bool = true" ), "react( \"bool = true\" )" );
-	ok( react( "prop = bool ? 'foo' : 'bar'" ), "react( \"prop = bool ? 'foo' : 'bar'\" )" );
-	ok( react( obj, "[ prop ] = 'value'" ), "react( obj, \"[ prop ] = 'value'\" )" );
+	ok( react( obj, "[ bool ? 'foo' : 'bar' ] = 'value'" ), "react( obj, \"[ bool ? 'foo' : 'bar' ] = 'value'\" )" );
 	
 	strictEqual( obj.foo, "value", "obj.foo" );
 	strictEqual( 'bar' in obj, false, "'bar' in obj" );
@@ -1711,12 +1711,12 @@ test( "permanent property assignment: object literal, property valueArray", func
 	strictEqual( obj.foo, "value", "obj.foo" );
 	strictEqual( obj.bar, "value", "obj.bar" );
 	
-	ok( react( "~", obj, "[ prop ]" ), "react( \"~\", obj, \"[ prop ]\" )" );
+	ok( react( "~", obj, "[ bool ? 'foo' : 'bar' ]" ), "react( \"~\", obj, \"[ bool ? 'foo' : 'bar' ]\" )" );
 	
 	strictEqual( obj.foo, "value", "obj.foo" );
 	strictEqual( obj.bar, "value", "obj.bar" );
 	
-	react( "delete prop; delete bool;" );
+	react( "delete bool;" );
 } );
 
 test( "permanent property assignment: object valueArray, property literal", function() {
@@ -1727,8 +1727,7 @@ test( "permanent property assignment: object valueArray, property literal", func
 	ok( obj2, "obj2 = { prop : \"bar\" }" );
 	
 	ok( !react( "bool = false" ), "react( \"bool = false\" )" );
-	ok( react( "robj = bool ?", obj1, " : ", obj2 ), "react( \"robj = bool ?\", obj1, \" : \", obj2 )" );
-	ok( react( "robj.prop = 'value'" ), "react( \"robj.prop = 'value'\" )" );
+	ok( react( "( bool ?", obj1, " : ", obj2, ").prop = 'value'" ), "react( \"( bool ?\", obj1, \" : \", obj2, \").prop = 'value'\" )" );
 	
 	strictEqual( "prop" in obj1, false, "\"prop\" in obj1" );
 	strictEqual( obj2.prop, "value", "obj2.prop" );
@@ -1738,12 +1737,81 @@ test( "permanent property assignment: object valueArray, property literal", func
 	strictEqual( obj1.prop, "value", "obj1.prop" );
 	strictEqual( obj2.prop, "value", "obj2.prop" );
 	
-	ok( react( "~robj.prop" ), "react( \"~robj.prop\" )" );
+	ok( react( "~( bool ?", obj1, " : ", obj2, ").prop" ), "react( \"~( bool ?\", obj1, \" : \", obj2, \").prop\" )" );
 	
 	strictEqual( obj1.prop, "value", "obj1.prop" );
 	strictEqual( obj2.prop, "value", "obj2.prop" );
 	
-	react( "delete robj; delete bool;" );
+	react( "delete bool;" );
+} );
+
+test( "permanent property assignment: object literal, property property path", function() {
+	var obj = {};
+	
+	ok( react( "propObj =", {} ), "react( \"propObj =\", {} )" );
+	ok( react( "propObj.prop = 'prop1'" ), "react( \"propObj.prop = 'prop1'\" )" );
+	
+	ok( react( obj, "[ propObj.prop ] = 'value'" ), "react( obj, \"[ propObj.prop ] = 'value'\" )" );
+	strictEqual( obj.prop1, "value", "obj.prop1" );
+	ok( react( "propObj.prop = 'prop2'" ), "react( \"propObj.prop = 'prop2'\" )" );
+	strictEqual( obj.prop2, "value", "obj.prop2" );
+	
+	react( "~", obj, "[ propObj.prop ]" );
+	react( "~propObj.prop" );
+	react( "delete propObj" );
+} );
+
+test( "permanent property assignment: object property path, property literal", function() {
+	var obj1 = {}, obj2 = {};
+	
+	ok( react( "objObj =", {} ), "react( \"objObj =\", {} )" );
+	ok( react( "objObj.inner =", obj1 ), "react( \"objObj.inner =\", obj1 )" );
+	
+	ok( react( "objObj.inner.prop = 'value'" ), "react( \"objObj.inner.prop = 'value'\" )" );
+	strictEqual( obj1.prop, "value", "obj1.prop" );
+	ok( react( "objObj.inner =", obj2 ), "react( \"objObj.inner =\", obj2 )" );
+	strictEqual( obj2.prop, "value", "obj2.prop" );
+	
+	react( "~objObj.inner.prop" );
+	react( "~objObj.inner" );
+	react( "delete objObj" );
+} );
+
+test( "permanent property assignment: object literal, property function call", function() {
+	var prop = function( prop ) {
+			return prop;
+		},
+		obj = {};
+	
+	ok( react( "prop = 'prop1'" ), "react( \"prop = 'prop1'\" )" );
+	
+	ok( react( obj, "[", prop, "( prop ) ] = 'value'" ), "react( obj, \"[\", prop, \"( prop ) ] = 'value'\" )" );
+	strictEqual( obj.prop1, "value", "obj.prop1" );
+	ok( react( "prop = 'prop2'" ), "react( \"prop = 'prop2'\" )" );
+	strictEqual( obj.prop2, "value", "obj.prop2" );
+	
+	react( "~", obj, "[", prop, "( prop ) ]" );
+	react( prop, "~( prop )" );
+	react( "delete prop" );
+} );
+
+test( "permanent property assignment: object function call, property literal", function() {
+	var obj = function( obj ) {
+			return obj;
+		},
+		obj1 = {},
+		obj2 = {};
+	
+	ok( react( "obj =", obj1 ), "react( \"obj =\", obj1 )" );
+	
+	ok( react( obj, "( obj )[ 'prop' ] = 'value'" ), "react( obj, \"( obj )[ 'prop' ] = 'value'\" )" );
+	strictEqual( obj1.prop, "value", "obj1.prop" );
+	ok( react( "obj =", obj2 ), "react( \"obj =\", obj2 )" );
+	strictEqual( obj2.prop, "value", "obj2.prop" );
+	
+	react( "~", obj, "( obj )[ 'prop' ]" );
+	react( obj, "~( obj )" );
+	react( "delete obj" );
 } );
 
 test( "reversible property assignment: object literal, property variable", function() {
@@ -1858,6 +1926,91 @@ test( "reversible property assignment: object valueArray, property literal", fun
 	strictEqual( obj2.prop, "bar", "obj2.prop" );
 	
 	react( "delete robj; delete bool;" );
+} );
+
+test( "reversible property assignment: object literal, property property path", function() {
+	var obj = {};
+	
+	ok( react( "propObj =", {} ), "react( \"propObj =\", {} )" );
+	ok( react( "propObj.prop = 'prop1'" ), "react( \"propObj.prop = 'prop1'\" )" );
+	
+	ok( react( obj, "[ propObj.prop ] ~= 'value'" ), "react( obj, \"[ propObj.prop ] ~= 'value'\" )" );
+	strictEqual( obj.prop1, "value", "obj.prop1" );
+	
+	ok( react( "propObj.prop = 'prop2'" ), "react( \"propObj.prop = 'prop2'\" )" );
+	strictEqual( obj.prop2, "value", "obj.prop2" );
+	ok( !( "prop1" in obj ), "!( \"prop1\" in obj )" );
+	
+	ok( react( "~", obj, "[ propObj.prop ]" ), "react( \"~\", obj, \"[ propObj.prop ]\" )" );
+	ok( !( "prop2" in obj ), "!( \"prop2\" in obj )" );
+	
+	react( "~propObj.prop" );
+	react( "delete propObj" );
+} );
+
+test( "reversible property assignment: object property path, property literal", function() {
+	var obj1 = {}, obj2 = {};
+	
+	ok( react( "objObj =", {} ), "react( \"objObj =\", {} )" );
+	ok( react( "objObj.inner =", obj1 ), "react( \"objObj.inner =\", obj1 )" );
+	
+	ok( react( "objObj.inner.prop ~= 'value'" ), "react( \"objObj.inner.prop ~= 'value'\" )" );
+	strictEqual( obj1.prop, "value", "obj1.prop" );
+	
+	ok( react( "objObj.inner =", obj2 ), "react( \"objObj.inner =\", obj2 )" );
+	strictEqual( obj2.prop, "value", "obj2.prop" );
+	ok( !( "prop" in obj1 ), "!( \"prop\" in obj1 )" );
+	
+	ok( react( "~objObj.inner.prop" ), "react( \"~objObj.inner.prop\" )" );
+	ok( !( "prop" in obj2 ), "!( \"prop\" in obj2 )" );
+	
+	react( "~objObj.inner" );
+	react( "delete objObj" );
+} );
+
+test( "reversible property assignment: object literal, property function call", function() {
+	var prop = function( prop ) {
+			return prop;
+		},
+		obj = {};
+	
+	ok( react( "prop = 'prop1'" ), "react( \"prop = 'prop1'\" )" );
+	
+	ok( react( obj, "[", prop, "( prop ) ] ~= 'value'" ), "react( obj, \"[\", prop, \"( prop ) ] ~= 'value'\" )" );
+	strictEqual( obj.prop1, "value", "obj.prop1" );
+	
+	ok( react( "prop = 'prop2'" ), "react( \"prop = 'prop2'\" )" );
+	strictEqual( obj.prop2, "value", "obj.prop2" );
+	ok( !( "prop1" in obj ), "!( \"prop1\" in obj )" );
+	
+	ok( react( "~", obj, "[", prop, "( prop ) ]" ), "react( \"~\", obj, \"[\", prop, \"( prop ) ]\" )" );
+	ok( !( "prop2" in obj ), "!( \"prop2\" in obj )" );
+	
+	react( prop, "~( prop )" );
+	react( "delete prop" );
+} );
+
+test( "reversible property assignment: object function call, property literal", function() {
+	var obj = function( obj ) {
+			return obj;
+		},
+		obj1 = {},
+		obj2 = {};
+	
+	ok( react( "obj =", obj1 ), "react( \"obj =\", obj1 )" );
+	
+	ok( react( obj, "( obj )[ 'prop' ] ~= 'value'" ), "react( obj, \"( obj )[ 'prop' ] ~= 'value'\" )" );
+	strictEqual( obj1.prop, "value", "obj1.prop" );
+	
+	ok( react( "obj =", obj2 ), "react( \"obj =\", obj2 )" );
+	strictEqual( obj2.prop, "value", "obj2.prop" );
+	ok( !( "prop" in obj1 ), "!( \"prop\" in obj1 )" );
+	
+	ok( react( "~", obj, "( obj )[ 'prop' ]" ), "react( \"~\", obj, \"( obj )[ 'prop' ]\" )" );
+	ok( !( "prop" in obj2 ), "!( \"prop\" in obj2 )" );
+	
+	react( obj, "~( obj )" );
+	react( "delete obj" );
 } );
 
 test( "permanent property deletion", function() {
@@ -2324,6 +2477,105 @@ test( "call w/o return value: function is literal, argument is valueArray", func
 	react( "delete ", call, "; delete r" );
 } ); 
 
+test( "call w/o return value: function is literal, argument is object path", function() {
+	var ret,
+		func = function( arg ) {
+			ret = arg;
+		};
+	
+	ok( true, "func = function( arg ) { ret = arg; }" );
+	
+	ok( react( "propObj =", {} ), "react( \"propObj =\", {} )" );
+	ok( react( "propObj.prop = 'prop1'" ), "react( \"propObj.prop = 'prop1'\" )" );
+	
+	ok( !react( func, "( propObj.prop )" ), "react( func, \"( propObj.prop )\" )" );
+	strictEqual( ret, "prop1", "ret" );
+	ok( react( "propObj.prop = 'prop2'" ), "react( \"propObj.prop = 'prop2'\" )" );
+	strictEqual( ret, "prop2", "ret" );
+	
+	react( func, "~( propObj.prop )" );
+	react( "~propObj.prop" );
+	react( "delete propObj" );
+} );
+
+test( "call w/o return value: function is object path, argument is literal", function() {
+	var ret1,
+		ret2,
+		method1 = function( arg ) {
+			ret1 = arg;
+		},
+		method2 = function( arg ) {
+			ret2 = arg;
+		};
+	
+	ok( true, "method1 = function( arg ) { ret1 = arg; }" );
+	ok( true, "method2 = function( arg ) { ret2 = arg; }" );
+	
+	ok( react( "objObj =", {} ), "react( \"objObj =\", {} )" );
+	ok( react( "objObj.method =", method1 ), "react( \"objObj.method =\", method1 )" );
+	
+	ok( !react( "objObj.method( 'value' )" ), "react( \"objObj.method( 'value' )\" )" );
+	strictEqual( ret1, "value", "ret1" );
+	ok( react( "objObj.method =", method2 ), "react( \"objObj.method =\", method2 )" );
+	strictEqual( ret2, "value", "ret2" );
+	
+	react( "objObj.method~( 'value' )" );
+	react( "~objObj.method" );
+	react( "delete objObj" );
+} );
+
+test( "call w/o return value: function is literal, argument is function call", function() {
+	var ret,
+		func = function( arg ) {
+			ret = arg;
+		},
+		arg  = function( arg ) {
+			return arg;
+		};
+	
+	ok( true, "func = function( arg ) { ret = arg; }" );
+	ok( true, "arg  = function( arg ) { return arg; }" );
+	
+	ok( react( "arg = 'before'" ), "react( \"arg = 'before'\" )" );
+	
+	ok( react( func, "(", arg, "( arg ) )" ), "react( func, \"(\", arg, \"( arg ) )\" )" );
+	strictEqual( ret, "before", "ret" );
+	ok( react( "arg = 'after'" ), "react( \"arg = 'after'\" )" );
+	strictEqual( ret, "after", "ret" );
+	
+	react( func, "~(", arg, "( arg ) )" );
+	react( arg, "~( arg )" );
+	react( "delete arg" );
+} );
+
+test( "call w/o return value: function is function call, argument is literal", function() {
+	var ret1, ret2,
+		func1 = function( arg ) {
+			ret1 = arg;
+		},
+		func2 = function( arg ) {
+			ret2 = arg;
+		},
+		func = function( func ) {
+			return func;
+		};
+	
+	ok( true, "func1 = function() { ret = 'func1'; }" );
+	ok( true, "func2 = function() { ret = 'func2'; }" );
+	ok( true, "func = function( func ) { return func; }" );
+	
+	ok( react( "func =", func1 ), "react( \"func =\", func1 )" );
+	
+	ok( react( func, "( func )( 'func' )" ), "react( func, \"( func )( 'func' )\" )" );
+	strictEqual( ret1, "func", "ret1" );
+	ok( react( "func =", func2 ), "react( \"func =\", func2 )" );
+	strictEqual( ret2, "func", "ret2" );
+	
+	react( func, "( func )~( 'func' )" );
+	react( func, "~( func )" );
+	react( "delete func" );
+} );
+
 test( "call w/o return value: function is literal, arguments are variable/literal", function() {
 	var foo,
 		func = function( arg1, arg2 ) {
@@ -2364,19 +2616,15 @@ test( "registering :() and deregistering ~() call", function() {
 		},
 		r1_func3 = function() {
 			r1_func3_val = order++;
-		},
-		call1, call2, call3;
+		};
 	
 	ok( r1, "r1 = react.leak( \"x+t\" )" );
 	
-	call1 = react.leak( r1_func1, ":(", r1, ");" );
-	call2 = react.leak( r1_func2, ":(", r1, ");" );
-	call3 = react.leak( r1_func3, ":(", r1, ");" );
+	react( r1_func1, ":(", r1, ");" );
+	react( r1_func2, ":(", r1, ");" );
+	react( r1_func3, ":(", r1, ");" );
 	
-	ok( r1._partOf[ call1._value._guid ]._func === r1_func1 &&
-		r1._partOf[ call2._value._guid ]._func === r1_func2 &&
-		r1._partOf[ call3._value._guid ]._func === r1_func3,
-		"r1 has been registered to the functions" );
+	strictEqual( countProps( r1._partOf ), 3, "r1 has been registered to the functions" );
 	
 	strictEqual( r1_func1_val, undefined, "r1_func1_val is undefined." );
 	strictEqual( r1_func2_val, undefined, "r1_func2_val is undefined." );
@@ -2393,7 +2641,7 @@ test( "registering :() and deregistering ~() call", function() {
 	
 	ok( isEmptyObj( r1._partOf ), "All r1 has been unregistered from all functions." );
 	
-	react( "delete ", call1, "; delete ", call2, "; delete ", call3, "; delete", r1 );
+	react( "delete", r1 );
 } );
 
 test( "call w/ return value: return value used, but not in an assignment", function() {
@@ -2405,17 +2653,24 @@ test( "call w/ return value: return value used, but not in an assignment", funct
 	ok( sqr, "react( \"sqr = \", sqrFunc );" );
 	
 	strictEqual( react( "sqr( x ) + sqr( 10 );" ), 100 + x.valueOf()*x.valueOf(), "react( \"sqr( x ) + sqr( 10 );\" )" );
-	strictEqual( countProps( sqr._partOf ), 2, "countProps( sqr._partOf )" );
-	strictEqual( countProps( x._partOf ), 1, "countProps( x._partOf )" );
+	strictEqual( countProps( sqr._partOf ), 0, "countProps( sqr._partOf )" );
+	strictEqual( countProps( x._partOf ), 0, "countProps( x._partOf )" );
+	
+	strictEqual( react( "sqr( x ) + sqr( 10 ); sqr( 10 )" ), 100, "react( \"sqr( x ) + sqr( 10 ); sqr( 10 )\" )" );
+	strictEqual( countProps( sqr._partOf ), 1, "countProps( sqr._partOf )" );
+	strictEqual( countProps( x._partOf ), 0, "countProps( x._partOf )" );
 	
 	strictEqual( react( "sqr( x ); sqr( 10 )" ), 100, "react( \"sqr( x ); sqr( 10 )\" )" );
-	strictEqual( countProps( sqr._partOf ), 4, "countProps( sqr._partOf )" );
-	strictEqual( countProps( x._partOf ), 2, "countProps( x._partOf )" );
+	strictEqual( countProps( sqr._partOf ), 3, "countProps( sqr._partOf )" );
+	strictEqual( countProps( x._partOf ), 1, "countProps( x._partOf )" );
 	
-	//TODO: use function call as argument in another call
-	
+	//strictEqual( react( "sqr( sqr( 10 ) )" ), 10000, "react( \"sqr( sqr( 10 ) )\" )" );
+	//strictEqual( countProps( sqr._partOf ), 5, "countProps( sqr._partOf )" );
+	//strictEqual( countProps( x._partOf ), 1, "countProps( x._partOf )" );
+	//debugger;
+	ok( react( "sqr~( 10 )" ), "react( \"sqr~( 10 )\" )" );
 	ok( react( "sqr~( x ); sqr~( 10 )" ), "react( \"sqr~( x ); sqr~( 10 )\" )" );
-	ok( react( "sqr~( x ); sqr~( 10 )" ), "react( \"sqr~( x ); sqr~( 10 )\" )" );
+	//ok( react( "sqr~( sqr( 10 ) ); " ), "react( \"sqr~( sqr( 10 ) );\" )" );
 	ok( isEmptyObj( sqr._partOf ), "isEmptyObj( sqr._partOf )" );
 	ok( isEmptyObj( x._partOf ), "isEmptyObj( x._partOf )" );
 	
@@ -2437,6 +2692,11 @@ test( "call w/ return value: return value stored in a variable", function() {
 	strictEqual( countProps( x._partOf ), 1, "countProps( x._partOf )" );
 	strictEqual( xSqr, x.valueOf()*x.valueOf(), "xSqr" );
 	strictEqual( react( "rea" ), x.valueOf()*x.valueOf(), "react( \"rea\" )" );
+	
+	ok( react( "x += 1" ), "react( \"x += 1\" )" );
+	strictEqual( xSqr, x.valueOf()*x.valueOf(), "xSqr" );
+	
+	//not allowed: react( sqrFunc, "~( x )" );
 	
 	react( "rea = sqr(", 10, ")" );
 	ok( rea._value._func === sqr, "react( \"rea = sqr(\", 10, \")\" )._value._func" );
@@ -2608,9 +2868,12 @@ test( "custom datatype", function() {
 	strictEqual( react( "inst2 = Type( inst )" ).value, react( "inst" ), "reactive, depending instances: react( \"inst2 = Type( inst )\" ).value" );
 	strictEqual( countProps( react.leak( "Type" )._partOf ), 2, "countProps( react.leak( \"Type\" )._partOf )" );
 	strictEqual( countProps( x._partOf ), 2, "countProps( x._partOf )" );
+	strictEqual( countProps( react.leak( "inst" )._partOf ), 1, "countProps( react.leak( \"inst\" )._partOf )" );
 	ok( react( "x += 1" ), "react( \"x += 1\" )" );
 	strictEqual( react( "inst" ).value, x.valueOf()+2, "automatic update of reactive instance: react( \"inst\" ).value" );
 	strictEqual( react( "inst2" ).value, react( "inst" ), "automatic update of depending reactive instance: react( \"inst2\" ).value" );
+	
+	react( "Type~( 1235813 ); ", Type, "~( x ); " );
 	
 	react( "delete inst2; delete inst; delete Type;" );
 } );
@@ -2618,22 +2881,46 @@ test( "custom datatype", function() {
 
 module( "Context sensitive variables" );
 
-test( "simple context variables without default context", function() {
+test( "simple context variables with function", function() {
 	var func = function( data ) {
-			return ( "0" in arguments ? data : "on context" );
+			return ( "0" in arguments ? data : "no context" );
 		},
 		ctxtVar;
 	
-	ok( ctxtVar = react.leak( "ctxtVar = ", func ), "context variable without default context: react( \"ctxtVar = \", function( data ) { return ( data ? \"data\" : \"\" ) } )" );
-	ok( !("_context" in ctxtVar), "context of ctxtVar reset to null" );
+	ok( ctxtVar = react.leak( "ctxtVar = ", func ), "context variable: react( \"ctxtVar = \", function( data ) { return ( data ? \"data\" : \"\" ) } )" );
+	ok( !("_context" in ctxtVar), "context of ctxtVar set to null" );
 	
 	strictEqual( react( "ctxtVar" ), func, "variable acts as normal function: react( \"ctxtVar\" )" );
 	
 	strictEqual( react( "ctxtVar{ x }" ), x.valueOf(), "evaluation in custom context: react( \"ctxtVar{ x }\" )" );
-	strictEqual( react( "ctxtVar" ), func, "variable still acts as normal function: react( \"ctxtVar\" )" );
-	raises( function() { react( "ctxtVar = ctxtVar{ f }" ) }, "ctxtVar itself cannot hold a context: react( \"ctxtVar = ctxtVar{ f }\" ) -> exception" );
+	strictEqual( react( "ctxtVar" ), func, "variable on its own still acts as normal function: react( \"ctxtVar\" )" );
+	strictEqual( react( "ctxtVar{ 'literal' }" ), "literal", "evaluation in custom context: react( \"ctxtVar{ 'literal' }\" )" );
+	
+	react( "ctxtVar = ctxtVar{ f }" );
+	ok( ctxtVar._context[ 0 ] === f, "ctxtVar itself can hold a context: react( \"ctxtVar = ctxtVar{ f }\" )" );
 	
 	react( "delete ctxtVar" );
+} );
+
+test( "complex context variable with function", function() {
+	var func = function( data ) {
+			return ( "0" in arguments ? data : "no context" );
+		},
+		cmplCtxtVar;
+	
+	ok( cmplCtxtVar = react.leak( "cmplCtxtVar = ", func, " + ' to the max!!!'" ), "context variable: react( \"cmplCtxtVar = \", function( data ) { return ( data ? \"data\" : \"\" ) }, \" + ' to the max!!!'\" )" );
+	ok( !("_context" in cmplCtxtVar), "context of cmplCtxtVar set to null" );
+	
+	strictEqual( react( "cmplCtxtVar" ), String( func ) + " to the max!!!", "function in variable acts as normal function: react( \"cmplCtxtVar\" )" );
+	
+	strictEqual( react( "cmplCtxtVar{ f }" ), f.valueOf() + " to the max!!!", "evaluation in custom context: react( \"cmplCtxtVar{ f }\" )" );
+	strictEqual( react( "cmplCtxtVar" ), String( func ) + " to the max!!!", "variable on its own still acts as normal function: react( \"ctxtVar\" )" );
+	strictEqual( react( "cmplCtxtVar{ 'literal' }" ), "literal to the max!!!", "evaluation in custom context: react( \"cmplCtxtVar{ 'literal' }\" )" );
+	react( "cmplCtxtVar = cmplCtxtVar{ f }" );
+	ok( !( "_context" in cmplCtxtVar ), "cmplCtxtVar itself does not hold a context: react( \"cmplCtxtVar = cmplCtxtVar{ f }\" )" );
+	ok( cmplCtxtVar._value._context[ 0 ] === f, "the expression array does: react( \"cmplCtxtVar = cmplCtxtVar{ f }\" )" );
+	
+	react( "delete cmplCtxtVar" );
 } );
 
 test( "complex context variable with simple context variable", function() {
@@ -2647,23 +2934,30 @@ test( "complex context variable with simple context variable", function() {
 	
 	strictEqual( react( "(ctxtVar + ' to the max!'){ f }" ), "false to the max!", "context has to propagate down: react( \"(ctxtVar + ' to the max!'){ f }\" )" );
 	strictEqual( react( "(ctxtVar{ foo } + ' to the max!'){ f }" ), "foo to the max!", "context is custom: react( \"(ctxtVar{ foo } + ' to the max!'){ f }\" )" );
-	strictEqual( react( "ctxtVar + (ctxtVar + ' to the max!'){ f }" ), String( func ) + "false to the max!", "separated context array: react( \"ctxtVar + (ctxtVar + ' to the max!'){ f }\" )" );
+	
+	strictEqual( react( "ctxtVar + (ctxtVar + ' to the max!'){ f }" ), String( func ) + "false to the max!", "separated context array: react( \"ctxtVar + (ctxtVar + ' to the max!'){ f }\" )" );strictEqual( react( "(ctxtVar + ' to the max!'){ 'literal' }" ), "literal to the max!", "literal context has to propagate down: react( \"(ctxtVar + ' to the max!'){ 'literal' }\" )" );
+	strictEqual( react( "(ctxtVar{ foo } + ' to the max!'){ 'literal' }" ), "foo to the max!", "literal context is custom: react( \"(ctxtVar{ foo } + ' to the max!'){ 'literal' }\" )" );
+	strictEqual( react( "ctxtVar + (ctxtVar + ' to the max!'){ 'literal' }" ), String( func ) + "literal to the max!", "separated context array: react( \"ctxtVar + (ctxtVar + ' to the max!'){ 'literal' }\" )" );
 	
 	ok( react( "cmplCtxtVar = ctxtVar + ' to the max!'" ), "complex var without any contexts set: react( \"cmplCtxtVar = ctxtVar + ' to the max!'\" )" );
 	strictEqual( react( "cmplCtxtVar" ), String( func ) + " to the max!", "complex var in no given context: react( \"cmplCtxtVar\" )" );
 	strictEqual( react( "cmplCtxtVar{ t }" ), "true to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
+	strictEqual( react( "cmplCtxtVar{ 'literal' }" ), "literal to the max!", "complex var in custom literal context: react( \"cmplCtxtVar{ 'literal' }\" )" );
 	
 	ok( react( "cmplCtxtVar = (ctxtVar + ' to the max!'){ f }" ), "context set for value of complex var: react( \"cmplCtxtVar = (ctxtVar + ' to the max!'){ f }\" )" );
 	strictEqual( react( "cmplCtxtVar" ), "false to the max!", "complex var in no given context: react( \"cmplCtxtVar\" )" );
 	strictEqual( react( "cmplCtxtVar{ t }" ), "false to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
+	strictEqual( react( "cmplCtxtVar{ 'literal' }" ), "false to the max!", "complex var in custom literal context: react( \"cmplCtxtVar{ 'literal' }\" )" );
 	
 	ok( react( "cmplCtxtVar = (ctxtVar{ foo } + ' to the max!'){ f }" ), "context set for value of complex var and for parts: react( \"cmplCtxtVar = (ctxtVar{ foo } + ' to the max!'){ f }\" )" );
 	strictEqual( react( "cmplCtxtVar" ), "foo to the max!", "complex var in no given context: react( \"cmplCtxtVar\" )" );
 	strictEqual( react( "cmplCtxtVar{ t }" ), "foo to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
+	strictEqual( react( "cmplCtxtVar{ 'literal' }" ), "foo to the max!", "complex var in custom literal context: react( \"cmplCtxtVar{ 'literal' }\" )" );
 	
 	ok( react( "cmplCtxtVar = ctxtVar + (ctxtVar + ' to the max!'){ f }" ), "context set and not set for parts: react( \"cmplCtxtVar = ctxtVar + (ctxtVar + ' to the max!'){ f }\" )" );
 	strictEqual( react( "cmplCtxtVar" ), String( func ) + "false to the max!", "complex var in no given context: react( \"cmplCtxtVar\" )" );
 	strictEqual( react( "cmplCtxtVar{ t }" ), "truefalse to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
+	strictEqual( react( "cmplCtxtVar{ 'literal' }" ), "literalfalse to the max!", "complex var in custom literal context: react( \"cmplCtxtVar{ 'literal' }\" )" );
 	
 	react( "delete cmplCtxtVar; delete ctxtVar;" );
 } );
