@@ -623,7 +623,7 @@ test( "calling methods of objects", function() {
 		obj = { ctxt : "obj+", func : func, inner : { ctxt : "inner+", func : func } };
 	
 	ok( func, "function( arg ) { return this.ctxt + ( arg ? \"one arg\" : \"no arg\" ); }" );
-	ok( obj, "{ ctxt : \"ctxt+\", inner : { ctxt : \"inner+\", func : func }, func : func" );
+	ok( obj, "{ ctxt : \"ctxt+\", inner : { ctxt : \"inner+\", func : func }, func : func }" );
 	
 	strictEqual( react( obj, ".func()" ), "obj+no arg", "test context: react( obj, \".func()\" )" );
 	strictEqual( react( obj, "[ 'func' ]( true )" ), "obj+one arg", "test context: react( obj, \"[ 'func' ]( true )\" )" );
@@ -1537,12 +1537,26 @@ test( "operator assignments", function() {
 	ok( equivArr( z._value, [ "^", [ "+", 5, [ "*", 10, x ] ], 2 ] ), "named variable: react( \"z *= z\" )" );
 	ok( objContent( z._dep, [ x ] ), "react.leak( \"z *= z\" )._dep" );
 	
+	var obj = react.leak( "obj = ", { prop : 'str' } );
+	ok( true, "react( \"obj =\", { prop : 'str' } )" );
+	ok( react( "obj.prop += 'ing'" ), "react( \"obj.prop += 'ing'\" )" );
+	
+	raises( function() { react( "obj.=prop" ) }, "react( \"obj.=prop\" ) make obj a literal -> exception because of react( \"obj.prop += 'ing'\" )" );
+	strictEqual( obj._value, "string", "property access assignment: react.leak( \"obj\" )._value" );
+	react( "~obj.prop" );
+	
+	var func = react.leak( "func = ", function() { return "string" } );
+	ok( true, "react( \"func = \", function() { return \"string\" } )" );
+	
+	react( "func(=)" );
+	strictEqual( func._value, "string", "property access assignment: react.leak( \"func.=prop\" )._value" );
+	
 	var zVal = z._value;
 	react.leak( "no partOf", "z ==.= 'bar'" );
 	ok( equivArr( z._value, [ "==", zVal, "bar" ] ), "operator assignment separator: react( \"z ==.= 'bar'\" )" );
 	ok( objContent( z._dep, [ x ] ), "react.leak( \"z ==.= 'bar'\" )._dep" );
 	
-	react( "delete z; delete", anonym );
+	react( "delete func; delete obj; delete z; delete", anonym );
 } );
 
 test( "evaluation before and after modifying a part", function() {
@@ -1791,7 +1805,6 @@ test( "permanent property assignment: object literal, property function call", f
 	strictEqual( obj.prop2, "value", "obj.prop2" );
 	
 	react( "~", obj, "[", prop, "( prop ) ]" );
-	react( prop, "~( prop )" );
 	react( "delete prop" );
 } );
 
@@ -1810,7 +1823,6 @@ test( "permanent property assignment: object function call, property literal", f
 	strictEqual( obj2.prop, "value", "obj2.prop" );
 	
 	react( "~", obj, "( obj )[ 'prop' ]" );
-	react( obj, "~( obj )" );
 	react( "delete obj" );
 } );
 
@@ -1986,7 +1998,6 @@ test( "reversible property assignment: object literal, property function call", 
 	ok( react( "~", obj, "[", prop, "( prop ) ]" ), "react( \"~\", obj, \"[\", prop, \"( prop ) ]\" )" );
 	ok( !( "prop2" in obj ), "!( \"prop2\" in obj )" );
 	
-	react( prop, "~( prop )" );
 	react( "delete prop" );
 } );
 
@@ -2009,7 +2020,6 @@ test( "reversible property assignment: object function call, property literal", 
 	ok( react( "~", obj, "( obj )[ 'prop' ]" ), "react( \"~\", obj, \"( obj )[ 'prop' ]\" )" );
 	ok( !( "prop" in obj2 ), "!( \"prop\" in obj2 )" );
 	
-	react( obj, "~( obj )" );
 	react( "delete obj" );
 } );
 
@@ -2304,7 +2314,7 @@ test( "call w/o return value: function is variable, argument is literal", functi
 	
 	strictEqual( foo, 150, "foo" );
 	
-	ok( react( "func~( 100 )" ), "react( \"func~( 100 )\" )" );
+	ok( react( "~func( 100 )" ), "react( \"~func( 100 )\" )" );
 	ok( isEmptyObj( func._partOf ), "isEmptyObj( func._partOf )" );
 	
 	ok( react( "func = ", func1 ), "react( \"func = \", func1 )" );
@@ -2338,7 +2348,7 @@ test( "call w/o return value: function is valueArray, argument is literal", func
 	
 	strictEqual( foo, 150, "foo" );
 	
-	ok( react( "( bool ?", func1, ":", func2, ")~( 100 )" ), "react( \"( bool ?\", func1, \":\", func2, \")~( 100 )\" )" );
+	ok( react( "~( bool ?", func1, ":", func2, ")( 100 )" ), "react( \"~( bool ?\", func1, \":\", func2, \")( 100 )\" )" );
 	
 	ok( react( "bool = true" ), "react( \"bool = true\" )" );
 	
@@ -2373,7 +2383,7 @@ test( "call w/o return value: function is object method with variable property, 
 	
 	strictEqual( foo, 150, "foo" );
 	
-	ok( react( obj, "[ prop ]~( 100 )" ), "react( obj, \"[ prop ]~( 100 )\" )" );
+	ok( react( "~", obj, "[ prop ]( 100 )" ), "react( \"~\", obj, \"[ prop ]( 100 )\" )" );
 	
 	ok( react( "prop = 'method1'" ), "react( \"prop = 'method1'\" )" );
 	
@@ -2410,7 +2420,7 @@ test( "call w/o return value: function is object method with variable context, a
 	
 	strictEqual( foo, 150, "foo" );
 	
-	ok( react( "ctxt.method~( 100 )" ), "react( \"ctxt.method~( 100 )\" )" );
+	ok( react( "~ctxt.method( 100 )" ), "react( \"~ctxt.method( 100 )\" )" );
 	
 	ok( react( "ctxt = ", obj1 ), "react( \"ctxt = \", obj1 )" );
 	
@@ -2439,7 +2449,7 @@ test( "call w/o return value: function is literal, argument is variable", functi
 	
 	strictEqual( foo, "bar", "foo" );
 	
-	ok( react( func, "~( arg1 )" ), "react( func, \"~( arg1 )\" )" );
+	ok( react( "~", func, "( arg1 )" ), "react( \"~\", func, \"( arg1 )\" )" );
 	ok( react( "arg1 = 'foo'" ), "react( \"arg1 = 'foo'\" )" );
 	
 	strictEqual( foo, "bar", "foo" );
@@ -2469,7 +2479,7 @@ test( "call w/o return value: function is literal, argument is valueArray", func
 	rpx = r.valueOf() + x.valueOf()
 	strictEqual( foo, rpx, "foo" );
 	
-	ok( react( func, "~( r+x )" ), "react( func, \"~( r+x )\" )" );
+	ok( react( "~", func, "( r+x )" ), "react( \"~\", func, \"( r+x )\" )" );
 	ok( react( "r = 'foo'" ), "react( \"r = 'foo'\" )" );
 	
 	strictEqual( foo, rpx, "foo" );
@@ -2493,7 +2503,7 @@ test( "call w/o return value: function is literal, argument is object path", fun
 	ok( react( "propObj.prop = 'prop2'" ), "react( \"propObj.prop = 'prop2'\" )" );
 	strictEqual( ret, "prop2", "ret" );
 	
-	react( func, "~( propObj.prop )" );
+	react( "~", func, "( propObj.prop )" );
 	react( "~propObj.prop" );
 	react( "delete propObj" );
 } );
@@ -2519,7 +2529,7 @@ test( "call w/o return value: function is object path, argument is literal", fun
 	ok( react( "objObj.method =", method2 ), "react( \"objObj.method =\", method2 )" );
 	strictEqual( ret2, "value", "ret2" );
 	
-	react( "objObj.method~( 'value' )" );
+	react( "~objObj.method( 'value' )" );
 	react( "~objObj.method" );
 	react( "delete objObj" );
 } );
@@ -2538,13 +2548,12 @@ test( "call w/o return value: function is literal, argument is function call", f
 	
 	ok( react( "arg = 'before'" ), "react( \"arg = 'before'\" )" );
 	
-	ok( react( func, "(", arg, "( arg ) )" ), "react( func, \"(\", arg, \"( arg ) )\" )" );
+	ok( !react( func, "(", arg, "( arg ) )" ), "react( func, \"(\", arg, \"( arg ) )\" )" );
 	strictEqual( ret, "before", "ret" );
 	ok( react( "arg = 'after'" ), "react( \"arg = 'after'\" )" );
 	strictEqual( ret, "after", "ret" );
 	
-	react( func, "~(", arg, "( arg ) )" );
-	react( arg, "~( arg )" );
+	react( "~", func, "(", arg, "( arg ) )" );
 	react( "delete arg" );
 } );
 
@@ -2566,13 +2575,12 @@ test( "call w/o return value: function is function call, argument is literal", f
 	
 	ok( react( "func =", func1 ), "react( \"func =\", func1 )" );
 	
-	ok( react( func, "( func )( 'func' )" ), "react( func, \"( func )( 'func' )\" )" );
+	ok( !react( func, "( func )( 'func' )" ), "react( func, \"( func )( 'func' )\" )" );
 	strictEqual( ret1, "func", "ret1" );
 	ok( react( "func =", func2 ), "react( \"func =\", func2 )" );
 	strictEqual( ret2, "func", "ret2" );
 	
-	react( func, "( func )~( 'func' )" );
-	react( func, "~( func )" );
+	react( "~", func, "( func )( 'func' )" );
 	react( "delete func" );
 } );
 
@@ -2596,7 +2604,7 @@ test( "call w/o return value: function is literal, arguments are variable/litera
 	
 	strictEqual( foo, "bar100", "foo" );
 	
-	ok( react( func, "~( arg1, 100 )" ), "react( func, \"~( arg1, 100 )\" )" );
+	ok( react( "~", func, "( arg1, 100 )" ), "react( \"~\", func, \"( arg1, 100 )\" )" );
 	ok( react( "arg1 = 'foo'" ), "react( \"arg1 = 'foo'\" )" );
 	
 	strictEqual( foo, "bar100", "foo" );
@@ -2604,7 +2612,7 @@ test( "call w/o return value: function is literal, arguments are variable/litera
 	react( "delete ", call, "; delete arg1" );
 } );
 
-test( "registering :() and deregistering ~() call", function() {
+test( "registering :() and deregistering ~ call", function() {
 	var r1 = react.leak( "x+t" ),
 		r1_func1_val, r1_func2_val, r1_func3_val,
 		order = 0,
@@ -2637,7 +2645,7 @@ test( "registering :() and deregistering ~() call", function() {
 	strictEqual( r1_func2_val, 1, "r1_func2 was evaluated second." );
 	strictEqual( r1_func3_val, 2, "r1_func3 was evaluated third." );
 	
-	react( r1_func1, "~(", r1, ");", r1_func2, "~(", r1, ");", r1_func3, "~(", r1, ");" );
+	react( "~", r1_func1, "(", r1, "); ~", r1_func2, "(", r1, "); ~", r1_func3, "(", r1, ");" );
 	
 	ok( isEmptyObj( r1._partOf ), "All r1 has been unregistered from all functions." );
 	
@@ -2668,9 +2676,9 @@ test( "call w/ return value: return value used, but not in an assignment", funct
 	//strictEqual( countProps( sqr._partOf ), 5, "countProps( sqr._partOf )" );
 	//strictEqual( countProps( x._partOf ), 1, "countProps( x._partOf )" );
 	//debugger;
-	ok( react( "sqr~( 10 )" ), "react( \"sqr~( 10 )\" )" );
-	ok( react( "sqr~( x ); sqr~( 10 )" ), "react( \"sqr~( x ); sqr~( 10 )\" )" );
-	//ok( react( "sqr~( sqr( 10 ) ); " ), "react( \"sqr~( sqr( 10 ) );\" )" );
+	ok( react( "~sqr( 10 )" ), "react( \"~sqr( 10 )\" )" );
+	ok( react( "~sqr( x ); ~sqr( 10 )" ), "react( \"~sqr( x ); ~sqr( 10 )\" )" );
+	//ok( react( "~sqr( sqr( 10 ) ); " ), "react( \"~sqr( sqr( 10 ) );\" )" );
 	ok( isEmptyObj( sqr._partOf ), "isEmptyObj( sqr._partOf )" );
 	ok( isEmptyObj( x._partOf ), "isEmptyObj( x._partOf )" );
 	
@@ -2696,7 +2704,7 @@ test( "call w/ return value: return value stored in a variable", function() {
 	ok( react( "x += 1" ), "react( \"x += 1\" )" );
 	strictEqual( xSqr, x.valueOf()*x.valueOf(), "xSqr" );
 	
-	//not allowed: react( sqrFunc, "~( x )" );
+	//not allowed: react( "~", sqrFunc, "( x )" );
 	
 	react( "rea = sqr(", 10, ")" );
 	ok( rea._value._func === sqr, "react( \"rea = sqr(\", 10, \")\" )._value._func" );
@@ -2873,7 +2881,7 @@ test( "custom datatype", function() {
 	strictEqual( react( "inst" ).value, x.valueOf()+2, "automatic update of reactive instance: react( \"inst\" ).value" );
 	strictEqual( react( "inst2" ).value, react( "inst" ), "automatic update of depending reactive instance: react( \"inst2\" ).value" );
 	
-	react( "Type~( 1235813 ); ", Type, "~( x ); " );
+	react( "~Type( 1235813 ); ~", Type, "( x ); " );
 	
 	react( "delete inst2; delete inst; delete Type;" );
 } );

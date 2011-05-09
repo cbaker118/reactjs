@@ -51,7 +51,8 @@ module( "Evaluation of expressions" );
 test( "Operator assignments", function() {
 	react( "r1 = 10; r2 = 10;" );
 	react( "obj1 =", { prop : "head - body - " }, "; obj2 =", { prop : "head - body - " } );
-	react( "obj3 =", { repl : "repl" }, "; obj4 =", { repl : "repl" } );
+	react( "obj3 =", { prop : "head - body - " }, "; obj4 =", { prop : "head - body - " } );
+	react( "obj5 =", { repl : "repl" }, "; obj6 =", { repl : "repl" } );
 	react( "prop = 'repl'" );
 	react( "bool1 = true; bool2 = true;" );
 	react( "s = 2" );
@@ -59,8 +60,9 @@ test( "Operator assignments", function() {
 	strictEqual( react( "r1 += 5" ), react( "r2 = r2+5" ), "react( \"r += 5\" ) === react( \"r = r+5\" )" );
 	strictEqual( react( "obj1.prop += 'tail'" ), react( "obj2.prop = obj2.prop + 'tail'" ), "react( \"obj.prop += 'tail'\" ) === react( \"obj.prop = obj.prop + 'tail'\" )" );
 	strictEqual( react( "-= r1" ), react( "r2 = -r2" ), "react( \"-= r\" ) === react( \"r = -r\" )" );
-	strictEqual( react( "obj1.=prop" ), react( "obj2 = obj2.prop" ), "react( \"obj.=prop\" ) === react( \"obj = obj.prop\" )" );
-	strictEqual( react( "obj3[= prop ]" ), react( "obj4 = obj4[ prop ]" ), "react( \"obj[= prop ]\" ) === react( \"obj = obj[ prop ]\" )" );
+	
+	strictEqual( react( "obj3.=prop" ), react( "obj4 = obj4.prop" ), "react( \"obj.=prop\" ) === react( \"obj = obj.prop\" )" );
+	strictEqual( react( "obj5[= prop ]" ), react( "obj6 = obj6[ prop ]" ), "react( \"obj[= prop ]\" ) === react( \"obj = obj[ prop ]\" )" );
 	strictEqual( react( "bool1 ?= 'true' : 'false'" ), react( "bool2 = bool2 ? 'true' : 'false'" ), "react( \"bool ?= 'true' : 'false'\" ) === react( \"bool = bool ? 'true' : 'false'\" )" );
 	strictEqual( react( "(= r1*s+13 )*10" ), react( "( r2 = r2*s+13 )*10" ), "react( \"(= r*s+13 )*10\" ) === react( \"( r = r*s+13 )*10\" )" );
 	strictEqual( react( "delete= r1" ), react( "r2 = delete r2" ), "react( \"delete= r\" ) === react( \"r = delete r\" )" );
@@ -353,11 +355,11 @@ test( "Deregistering function call", function() {
 	ok( react( "words = ' At the beach!'" ), "react( \"words = ' At the beach!'\" )" );
 	strictEqual( niceInvitation, "Visit me! At the beach!", "niceInvitation" );
 	
-	ok( !react( soonRetired, "~( words, ' But bring presents!' )" ), "trying to deregister with different arguments: react( soonRetired, \"~( words, ' But bring presents!' )\" )" );
+	raises( function() { react( "~", soonRetired, "( words, ' But bring presents!' )" ) }, "trying to deregister with different arguments: react( \"~\", soonRetired, \"( words, ' But bring presents!' )\" ) -> exception" );
 	ok( react( "words = ' Come soon!'" ), "react( \"words = ' Come soon!'\" )" );
 	strictEqual( niceInvitation, "Visit me! At the beach! Come soon!", "niceInvitation" );
 	
-	ok( react( soonRetired, "~( words )" ), "successful deregistration with same arguments: react( soonRetired, \"~( words )\" )" );
+	ok( react( "~", soonRetired, "( words )" ), "successful deregistration with same arguments: react( \"~\", soonRetired, \"( words )\" )" );
 	ok( react( "words = ' But bring presents!'" ), "react( \"words = ' But bring presents!'\" )" );
 	strictEqual( niceInvitation, "Visit me! At the beach! Come soon!", "niceInvitation" );
 	
@@ -368,7 +370,7 @@ test( "Deregistering function call", function() {
 	
 	ok( true, "react( \"rainOnCactus =\", function() { return \"The cactus is still there!\"; } );" );
 	strictEqual( react( "cactus = rainOnCactus()" ), "The cactus is still there!", "react( \"cactus = rainOnCactus()\" )" );
-	ok( !react( "rainOnCactus~()" ), "react( \"rainOnCactus~()\" )" );
+	ok( react( "~rainOnCactus()" ), "react( \"~rainOnCactus()\" )" );
 	strictEqual( react( "cactus" ), "The cactus is still there!", "react( \"cactus\" )" );
 	
 	//swearing example
@@ -386,11 +388,11 @@ test( "Deregistering function call", function() {
 	ok( react( "dirtyWord = 'SH*T!'" ), "react( \"dirtyWord = 'SH*T!'\" )" );
 	strictEqual( swearing, "DAMN!DAMN!SH*T!SH*T!", "swearing" );
 	
-	ok( react( swear, "~( dirtyWord )" ), "react( swear, \"~( dirtyWord )\" )" );
+	ok( react( "~", swear, "( dirtyWord )" ), "react( \"~\", swear, \"( dirtyWord )\" )" );
 	ok( react( "dirtyWord = 'F*CK!'" ), "react( \"dirtyWord = 'F*CK!'\" )" );
 	strictEqual( swearing, "DAMN!DAMN!SH*T!SH*T!F*CK!", "swearing" );
 	
-	ok( react( swear, "~( dirtyWord )" ), "react( swear, \"~( dirtyWord )\" )" );
+	ok( react( "~", swear, "( dirtyWord )" ), "react( \"~\", swear, \"( dirtyWord )\" )" );
 	ok( react( "dirtyWord = 'DAMN!'" ), "react( \"dirtyWord = 'DAMN!'\" )" );
 	strictEqual( swearing, "DAMN!DAMN!SH*T!SH*T!F*CK!", "swearing" );
 	
@@ -411,7 +413,7 @@ test( "Registering function call", function() {
 	strictEqual( booked, false, "booked" );
 	ok( react( "salary = 2500" ), "react( \"salary = 2500\" )" );
 	strictEqual( booked, true, "booked" );
-	ok( react( bookTrip, "~( salary )" ), "react( bookTrip, \"~( salary )\" )" );
+	ok( react( "~", bookTrip, "( salary )" ), "react( \"~\", bookTrip, \"( salary )\" )" );
 	ok( react( "salary = 3000" ), "react( \"salary = 3000\" )" );
 	strictEqual( booked, true, "booked" );
 	
@@ -428,7 +430,7 @@ test( "Registering function call", function() {
 	strictEqual( girl, "nobody", "girl" );
 	ok( react( "Jessi = 'cocky'" ), "react( \"Jessi = 'cocky'\" )" );
 	strictEqual( girl, "Zoey", "girl" );
-	ok( react( decide, "~( Zoey, Jessi )" ), "react( decide, \"~( Zoey, Jessi )\" )" );
+	ok( react( "~", decide, "( Zoey, Jessi )" ), "react( \"~\", decide, \"( Zoey, Jessi )\" )" );
 	ok( react( "Jessi = 'apologetic'" ), "react( \"Jessi = 'apologetic'\" )" );
 	strictEqual( girl, "Zoey", "girl" );
 	
@@ -450,7 +452,7 @@ test( "Introduction", function() {
 	ok( react( "jaguar.colour = 'black'" ), "react( \"jaguar.colour = 'black'\" )" );
 	
 	react( "~", chameleon, ".pattern" );
-	react( "~jaguar.color" );
+	react( "~jaguar.colour" );
 	react( "clean" );
 } );
 
@@ -533,8 +535,8 @@ test( "Basic assignment", function() {
 	ok( react( "child.inRoom = 'bedroom'" ), "react( \"child.inRoom = 'bedroom'\" )" );
 	strictEqual( flat.bedroom, 'coloured', "flat.bedroom" );
 	
-	react( "~child.inRoom" );
 	react( "~", flat, "[ child.inRoom ]" );
+	react( "~child.inRoom" );
 	react( "clean" );
 } );
 
@@ -590,7 +592,7 @@ test( "Deregistering property updates", function() {
 	ok( react( badListener, "[ bodypart ] = 'Listen to me!'" ), "react( badListener, \"[ bodypart ] = 'Listen to me!'\" );" );
 	strictEqual( badListener.earL, "Listen to me!", "badListener.earL" );
 	
-	ok( !react( "~", badListener, ".bodypart" ), "react( \"~\", badListener, \".bodypart\" )" );
+	raises( function() { react( "~", badListener, ".bodypart" ) }, "react( \"~\", badListener, \".bodypart\" ) -> exception" );
 	ok( react( "bodypart = 'earR'" ), "react( \"bodypart = 'earR'\" )" );
 	strictEqual( badListener.earR, "Listen to me!", "badListener.earR" );
 	
@@ -608,7 +610,7 @@ test( "Deregistering property updates", function() {
 	ok( react( "badListener.ear ~= true" ), "react( \"badListener.ear = true\" )" );
 	strictEqual( badListener.ear, true, "badListener.ear" );
 	
-	ok( !react( "~", badListener, ".ear" ), "react( \"~\", badListener, \".ear\" )" );
+	raises( function() { react( "~", badListener, ".ear" ) }, "react( \"~\", badListener, \".ear\" )" );
 	strictEqual( badListener.ear, true, "badListener.ear" );
 	
 	ok( react( "~badListener[ 'ear' ]" ), "react( \"~badListener[ 'ear' ]\" )" );
@@ -666,9 +668,92 @@ test( "Deletion", function() {
 module( "Objects" );
 
 test( "Operator overloading", function() {
-
+	//commutative example
+	var obj1 = {
+			value : 10,
+			"infix+" : function( r ) {
+				return { value : this.value + r.value };
+			},
+			"prefix-" : function() {
+				return { value : -this.value };
+			}
+	    },
+	    obj2 = {
+			value : 20
+	    };
+    
+	strictEqual( react( obj1, "+", obj2 ).value, 30, "react( obj1, \"+\", obj2 )" );
+	strictEqual( react( "-", obj1 ).value, -10, "react( \"-\", obj1 ).value" );
+	strictEqual( react( obj2, "+", obj1 ).value, 30, "react( obj2, \"+\", obj1 )" );
+	
+	//no commutative example
+	var obj1 = {
+			value : 10,
+			"infix^" : function( r, swapped ) {
+				if ( swapped )
+					throw( "Exponentation is not commutative!" );
+				
+				return { value : Math.pow( this.value, r.value ) };
+			}
+	    },
+	    obj2 = {
+			value : 2
+	    };
+	
+	strictEqual( react( obj1, "^", obj2 ).value, 100, "react( obj1, \"^\", obj2 ).value" );
+	raises( function() { react( obj2, "^", obj1 ).value }, "^ does not commute: react( obj2, \"^\", obj1 ) -> exception" );
+	
+	//reactive overloading example
+	var obj1 = {
+			value : 10,
+			"infix+" : function( r) {
+				return { value : this.value + r.value };
+			},
+			"prefix-" : function() {
+				return { value : -this.value };
+			}
+	    },
+	    obj2 = {
+			value : 20
+	    },
+	    obj3 = {
+			value : 50
+	    };
+	
+	react( "left =", obj1, "; right =", obj2 );
+	strictEqual( react( "res = left + right" ).value, 30, "react( \"res = left + right\" )" );
+	ok( react( "right =", obj3 ), "react( \"right =\", obj3 )" );
+	strictEqual( react( "res" ).value, 60, "react( \"res\" )" );
 } );
 
 test( "Custom objects", function() {
-
+	var Type = function( value ) {
+			if ( !(this instanceof Type) )
+				return new Type( value );
+			
+			this.value = value;
+	    };
+    
+	Type.prototype = {
+		"infix+" : function( obj2 ) {
+			return Type( this.value + obj2.value );
+		}
+	};
+    
+	react( "x = 10" );
+	var inst1 = react( "inst1 =", Type, "( x )" );
+	strictEqual( inst1.value, 10, "inst1.value" );
+	ok( inst1 instanceof Type, "inst1 instanceof Type" );
+	
+	var inst2 = react( "inst2 = inst1 + ", Type( 20 ) );
+	strictEqual( inst2.value, 30, "inst2.value" );
+	ok( inst2 instanceof Type, "inst2 instanceof Type" );
+	
+	react( "x = 20" );
+	inst1 = react( "inst1" );
+	strictEqual( inst1.value, 20, "inst1.value" );
+	ok( inst1 instanceof Type, "inst1 instanceof Type" );
+	inst2 = react( "inst2" );
+	strictEqual( inst2.value, 40, "inst2.value" );
+	ok( inst2 instanceof Type, "inst2 instanceof Type" );
 } );

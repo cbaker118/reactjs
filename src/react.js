@@ -1,7 +1,7 @@
-/*
+/* 
  * 
  * Copyright (c) 2011 Christopher Aue
- *
+ * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
@@ -109,7 +109,7 @@
 							return false;
 					}
 				
-				} else if ( rea._isVar && !rea._locked ) {
+				} else if ( ( rea._isVar && !rea._locked ) || rea._isPath || rea._isCall ) {
 					if ( f.call( this, rea ) === false )
 						return false;
 				}
@@ -223,57 +223,21 @@
 											str += " } ";
 									}
 									
-									if ( idx < len-1 )
-										str += " " + op + " ";
+									if ( idx < len-1 ) {
+										if ( op !== "." )
+											str += " ";
+										
+										str += op;
+										
+										if ( op !== "." )
+											str += " ";
+									}
 								}
 								
 								return str;
 							
 							} catch( e ) {
 								error( "valArray.toString:" + e.message );
-							}
-						},
-						_prevValueOf = function() {
-							try {
-								var op = this[ 0 ],
-									len = this.length-1,
-									ret,
-									cur,
-									context;
-								
-								context = Array.prototype.slice.apply( this._context || arguments );
-								idx = context.length;
-								while( idx-- )
-									context[ idx ] = context[ idx ].valueOf();
-								
-								if ( this.length === 2 ) {
-									//unary
-									if ( this[ 1 ]._isVar || this[ 1 ]._isExprArray || this[ 1 ]._isCall )
-										cur = this[ 1 ]._prevValueOf.apply( this[ 1 ], arguments );
-									else if ( context.length && typeof this[ 1 ] === "function" )
-										cur = this[ 1 ].apply( this[ 1 ], context );
-									else
-										cur = this[ 1 ];
-									
-									return operators[ op ].nudEval.call( this, cur, ret );
-								}
-								
-								//binary with two or more operands
-								for ( var idx = this.length-1; idx > 0; idx-- ) {
-									if ( this[ idx ]._isVar || this[ idx ]._isExprArray || this[ idx ]._isCall )
-										cur = this[ idx ]._prevValueOf.apply( this[ idx ], arguments );
-									else if ( context.length && typeof this[ idx ] === "function" )
-										cur = this[ idx ].apply( this[ idx ], context );
-									else
-										cur = this[ idx ];
-									
-									ret = ( ret === undefined  ) ? cur : operators[ op ].ledEval.call( this, cur, ret );
-								}
-								
-								return ret;
-							
-							} catch( e ) {
-								error( "valArray._prevValueOf: " + e.message );
 							}
 						},
 						addDep = function() {
@@ -364,7 +328,6 @@
 					return function( arr ) {
 						arr.valueOf 	 = valueOf;
 						arr.toString     = toString;
-						arr._prevValueOf = _prevValueOf;
 						
 						arr._makeVar		 = _makeVar;
 						arr.inCtxt       = inCtxt;
@@ -550,7 +513,7 @@
 																"lit" :
 															operand._isValArray ?
 																"arr" :
-															operand._isVar || operand._isCtxtArray || operand._isCall || ( operand._isFunc && delete operand._isFunc ) ?
+															operand._isVar || operand._isCtxtArray || operand._isCall || operand._isPath || ( operand._isFunc && delete operand._isFunc ) ?
 																"ref" :
 																"lit";
 												}
@@ -561,7 +524,7 @@
 							if ( type === "prefix" )
 								op.nudEval = function( operand, undef, interpreter ) {
 									//check for overloaded operators
-									if ( operand && operand[ id ] )
+									if ( operand && !operand._isVar && operand[ id ] )
 										return operand[ id ].call( operand );
 									
 									//standard operator behavior
@@ -594,7 +557,7 @@
 																"lit" :
 															left._isValArray ?
 																"arr" :
-															left._isVar || left._isCtxtArray || left._isCall || ( left._value && left._value._isValArray ) || ( left._isFunc && delete left._isFunc) ?
+															left._isVar || left._isCtxtArray || left._isCall || left._isPath || ( left._value && left._value._isValArray ) || ( left._isFunc && delete left._isFunc) ?
 																"ref" :
 																"lit";
 												}
@@ -609,7 +572,7 @@
 																"lit" :
 															right._isValArray ?
 																"arr" :
-															right._isVar || right._isCtxtArray || right._isCall || ( right._value && right._value._isValArray ) || ( right._isFunc && delete right._isFunc) ?
+															right._isVar || right._isCtxtArray || right._isCall || right._isPath || ( right._value && right._value._isValArray ) || ( right._isFunc && delete right._isFunc) ?
 																"ref" :
 																"lit";
 												}
@@ -620,11 +583,13 @@
 							if ( type !== "assignment" )
 								op.ledEval = function( left, right, interpreter ) {
 									//check for overloaded operators
-									if ( left && left[ id ] )
-										return left[ id ].call( left, right );
-									
-									if ( right && right[ id ] )
-										return right[ id ].call( right, left, true );
+									if ( left && !left._isVar && right && !right._isVar ) {
+										if ( left[ id ] )
+											return left[ id ].call( left, right );
+										
+										if ( right[ id ] )
+											return right[ id ].call( right, left, true );
+									}
 									
 									//standard operator behavior
 									return stdFunc.call( this, left, right, interpreter );
@@ -746,12 +711,12 @@
 			);
 			
 			operator( "=", "assignment", 10, null, function( v, val, interpreter ) {
-				if ( !v || ( !v._isVar && v.id !== "(id)" && !v._propAccess ) )
+				if ( !v || ( !v._isVar && !v._isPath && v.id !== "(id)" && !v._propAccess ) )
 					error( "Bad lvalue: no variable or object property." );
 				
 				assignTo = null;	//extern variable to keep track of assignments
 				
-				if ( v._propAccess ) {
+				if ( v._propAccess || v._isPath ) {
 					if ( isEmptyObj( v._dep ) && ( !val || ( !val._isVar && !val._isExprArray && !val._isCall && !val._isPath ) ) ) {
 						//literals only array
 						var ctxt, i, l;
@@ -808,7 +773,7 @@
 						arity 	: "operator"
 					};
 					expr = token.nud( expr );
-					expr.end = null;
+					expr.end = expr.parent.end;
 					expr.rbp = 10;
 					
 					return expr;
@@ -866,7 +831,7 @@
 			);
 			
 			operator( "~=", "assignment", 10, null, function( path, val ) {
-				if ( !path || !path._propAccess )
+				if ( !path || ( !path._propAccess && !path._isPath ) )
 					error( "Bad lvalue: no object property." );
 				
 				return PropPath( path, true, val, false );
@@ -1952,10 +1917,10 @@
 			} );
 			
 			operator( "delete", "delete", 90, null, function( v, interpreter ) {
-				if ( !v || ( !v._isVar && v.id !== "(id)" && !v._propAccess ) )
+				if ( !v || ( !v._isVar && !v._isPath && v.id !== "(id)" && !v._propAccess ) )
 					error( "Bad lvalue: no variable or object property." );
 				
-				if ( v._propAccess ) {
+				if ( v._propAccess || v._isPath ) {
 					if ( isEmptyObj( v._dep ) ) {
 						//literals only array
 						var ctxt, i, l;
@@ -1967,30 +1932,47 @@
 						return delete ctxt[ v[ l ] ];
 					}
 					
-					return PropPath( v, false, undefined, true );
+					return !!PropPath( v, false, undefined, true );
 				}
 				
 				return interpreter.nameTable[ "delete" ]( v._key || v.value );
 			} );
 			
 			operator( "~delete", "delete", 90, null, function( path ) {
-				if ( !path || !path._propAccess )
+				if ( !path || ( !path._propAccess && !path._isPath ) )
 					error( "Bad lvalue: no object property." );
 				
-				return PropPath( path, true, undefined, true );
+				return !!PropPath( path, true, undefined, true );
 			} );
 			
-			operator( "~", "prefix", 90, null, function( path ) {
-				if ( !path || !path._propAccess )
-					error( "Bad lvalue: no reactive object property." );
-				
-				var pathObj = PropPath.prototype._search( path );
-				
-				if ( pathObj === undefined ) //path was not registered
-					return false;
-				
-				return pathObj.rmv();
-			} );
+			operator( "~", "prefix", 90, function ( expr ) {
+					this.first = undefined;
+					this.nudEval = operators[ this.id ].nudEval;
+					expr.o[ expr.p ] = this;
+					
+					deregister = true;
+					
+					return {
+						o : this,
+						p : "first",
+						rbp : this.lbp,
+						end : null,
+						parent : expr,
+						prevToken : expr.o.id
+					};
+				},
+				function( v ) {
+					if ( !v || !v._isPath && !v._isCall )
+						error( "Bad lvalue: no reactive object property or function call." );
+					
+					deregister = false;
+					
+					if ( v._isPath )
+						return PropPath.prototype.remove( v );
+					else
+						return FunctionCall.prototype.remove( v );
+				}
+			);
 			
 			operator( "#", "prefix", 90, null, {
 				lit : function( lit ) {
@@ -2079,6 +2061,9 @@
 					argsArr = args !== undefined ? [ args ] : args;
 				}
 				
+				if ( deregister )
+					return FunctionCall.prototype._search( func, argsArr );
+				
 				call = FunctionCall( func, argsArr, true );
 				call instanceof FunctionCall && call._call();
 				return call;
@@ -2096,22 +2081,10 @@
 					argsArr = args !== undefined ? [ args ] : args;
 				}
 				
+				if ( deregister )
+					return FunctionCall.prototype._search( func, argsArr );
+				
 				return FunctionCall( func, argsArr, true ) ? true : false;
-			} );
-			
-			operator( "~(", "call", 100, null, function( func, args ) {
-				var argsArr;
-				
-				//create arguments array
-				if ( args && args._isValArray && args[ 0 ] === "," ) {
-					argsArr = args.slice( 1 );
-					delete argsArr._dep;
-					
-				} else {
-					argsArr = [ args ];
-				}
-				
-				return FunctionCall.prototype.remove( func, argsArr );
 			} );
 			
 			var objPropEval = {
@@ -2119,6 +2092,11 @@
 					lit : function( obj, prop ) {
 						if ( prop.id === "(id)" )
 							prop = prop.value;
+						
+						var path = [ ".", obj, prop ];
+						path = PropPath.prototype._search( path );
+						if ( path )
+							return path;
 						
 						if ( this.nextToken === "=" || this.nextToken === "~=" ||
 							 this.prevToken === "delete" || this.prevToken === "~delete" || this.prevToken === "~" ||
@@ -2128,16 +2106,17 @@
 						return obj[ prop ];
 					},
 					ref : function( obj, prop ) {
-						return makeExprArray( [ ".", obj, prop ], prop );
+						var path = [ ".", obj, prop ];
+						
+						return PropPath.prototype._search( path ) || makeExprArray( path, prop );
 					},
 					arr : function( obj, prop ) {
-						if ( prop[ 0 ] === "." ) {
-							var pathObj = PropPath.prototype._search( prop );
-							if ( pathObj !== undefined )
-								return makeExprArray( [ ".", obj, prop ], pathObj );
-						}
+						if ( prop[ 0 ] === "." )
+							prop = PropPath.prototype._search( prop ) || prop;
 						
-						return makeExprArray( [ ".", obj, prop ], prop._dep );
+						var path = [ ".", obj, prop ];
+						
+						return PropPath.prototype._search( path ) || makeExprArray( [ ".", obj, prop ], prop._isExprArray ? prop._dep : prop );
 					}
 				},
 				ref : {
@@ -2145,19 +2124,22 @@
 						if ( prop.id === "(id)" )
 							prop = prop.value;
 						
-						return makeExprArray( [ ".", obj, prop ], obj );
+						var path = [ ".", obj, prop ];
+						
+						return PropPath.prototype._search( path ) || makeExprArray( path, obj );
 					},
 					ref : function( obj, prop ) {
-						return makeExprArray( [ ".", obj, prop ], obj, prop );
+						var path = [ ".", obj, prop ];
+						
+						return PropPath.prototype._search( path ) || makeExprArray( path, obj, prop );
 					},
 					arr : function( obj, prop ) {
-						if ( prop[ 0 ] === "." ) {
-							var pathObj = PropPath.prototype._search( prop );
-							if ( pathObj !== undefined )
-								return makeExprArray( [ ".", obj, prop ], pathObj );
-						}
+						if ( prop[ 0 ] === "." )
+							prop = PropPath.prototype._search( prop ) || prop;
 						
-						return makeExprArray( [ ".", obj, prop ], obj, prop._dep );
+						var path = [ ".", obj, prop ];
+						
+						return PropPath.prototype._search( path ) || makeExprArray( path, obj, prop._isExprArray ? prop._dep : prop );
 					}
 				},
 				arr : {
@@ -2166,33 +2148,46 @@
 							prop = prop.value;
 						
 						if ( obj[ 0 ] === "." ) {
-							obj.push( prop );
-							return obj;
+							obj = PropPath.prototype._search( obj ) || obj;
+							
+							if ( obj._isExprArray )
+								return obj.push( prop ), obj;
 						}
 						
-						return makeExprArray( [ ".", obj, prop ], obj._dep );
+						var path = [ ".", obj, prop ];
+						
+						return PropPath.prototype._search( path ) || makeExprArray( path, obj._isExprArray ? obj._dep : obj );
 					},
 					ref : function( obj, prop ) {
 						if ( obj[ 0 ] === "." ) {
-							obj.addDep( prop ).push( prop );
-							return obj;
+							obj = PropPath.prototype._search( obj ) || obj;
+							
+							if ( obj._isExprArray )
+								return obj.addDep( prop ).push( prop ), obj;
 						}
 						
-						return makeExprArray( [ ".", obj, prop ], obj._dep, prop );
+						var path = [ ".", obj, prop ];
+						
+						return PropPath.prototype._search( path ) || makeExprArray( path, obj._isExprArray ? obj._dep : obj, prop );
 					},
 					arr : function( obj, prop ) {
-						if ( prop[ 0 ] === "." ) {
-							var pathObj = PropPath.prototype._search( prop );
-							if ( pathObj !== undefined )
-								return makeExprArray( [ ".", obj, prop ], pathObj );
-						}
+						if ( prop[ 0 ] === "." )
+							prop = PropPath.prototype._search( prop ) || prop;
 						
 						if ( obj[ 0 ] === "." ) {
-							obj.addDep( prop._dep ).push( prop );
-							return obj;
+							obj = PropPath.prototype._search( obj ) || obj;
+							
+							if ( obj._isExprArray )
+								return obj.addDep( prop._isExprArray ? prop._dep : prop ).push( prop ), obj;
 						}
 						
-						return makeExprArray( [ ".", obj, prop ], obj._dep, prop._dep );
+						var path = [ ".", obj, prop ];
+						
+						return PropPath.prototype._search( path ) || makeExprArray(
+							path,
+							obj._isExprArray ? obj._dep : obj,
+							prop._isExprArray ? prop._dep : prop
+						);
 					}
 				}
 			};
@@ -2254,6 +2249,7 @@
 			
 			//interpret function
 			var assignTo = null,
+				deregister = false,
 				opParts = {			//parts, a multiple-character operator is allowed to be composed of
 					"=" : true,
 					"!" : true,
@@ -2706,8 +2702,9 @@
 											if ( expr.end !== token.id )
 												error( "Expected " + expr.end + "." );
 											
-											//the complete sequence has a right binding power equal to the lbp of the starting token
-											expr.rbp = expr.o.lbp;
+											//the complete sequence has a right binding power equal to kind of inifity
+											//and will be evaluated directly after the next token had been identified.
+											expr.rbp = Infinity;
 											expr.end = null;
 											
 											//get next token
@@ -2721,8 +2718,9 @@
 												if ( expr.end !== token.id )
 													error( "Expected " + expr.end + "." );
 												
-												//the complete sequence has a right binding power equal to the lbp of the starting token
-												expr.rbp = expr.o.lbp;
+												//the complete sequence has a right binding power equal to kind of inifity
+												//and will be evaluated directly after the next token had been identified.
+												expr.rbp = Infinity;
 												expr.end = null;
 												
 												//get next token
@@ -2868,59 +2866,6 @@
 						error( "Variable.toString: " + e.message );
 					}
 				},
-				_prevValueOf : function() {
-					try {
-						var idx, context, value, valueOf;
-						
-						if ( "_prev" in this ) {
-							value = this._prev;
-							valueOf = "_prevValueOf";
-						} else {
-							value = this._value;
-							valueOf = "valueOf";
-						}
-						
-						if ( !this._context && arguments.length ) {
-							if ( typeof value === "function" ) {
-								context = [];
-								idx = arguments.length;
-								while( idx-- )
-									context[ idx ] = arguments[ idx ].valueOf();
-								
-								return value.apply( null, context );
-							
-							} else if ( value && value._prevValueOf )
-								return value._prevValueOf.apply( value, arguments );
-							
-							else
-								return value;
-						}
-						
-						if ( this._context ) {
-							if ( typeof value === "function" ) {
-								context = [];
-								idx = this._context.length;
-								while( idx-- )
-									context[ idx ] = this._context[ idx ].valueOf();
-								
-								return value.apply( null, context );
-							
-							} else if ( value && value._prevValueOf )
-								return value._prevValueOf.apply( value, this._context );
-							
-							else
-								return value;
-						
-						} else if ( value && value._prevValueOf )
-							return value._prevValueOf();
-						
-						else
-							return value;
-					
-					} catch( e ) {
-						error( "Variable._prevValueOf: " + e.message );
-					}
-				},
 				
 				invalidate : function( from ) {
 					delete this._evaled;
@@ -2945,9 +2890,6 @@
 						
 						return this;
 					}
-					
-					//save previous value temporarily, so invalidation has access to it, if necessary
-					this._prev = this._value;
 					
 					//set new value
 					this._value = val;
@@ -2982,9 +2924,6 @@
 					
 					//invalidate
 					this.invalidate();
-					
-					//delete previous value
-					delete this._prev;
 					
 					if ( !dontTrack )
 						//link dependencies to this instance
@@ -3132,21 +3071,23 @@
 					argIdx = args.length;
 					argsAreLits = true;
 					while ( argIdx-- ) {
-						if ( args[ argIdx ]._isVar || args[ argIdx ]._isExprArray || args[ argIdx ]._isCall ) {
+						if ( args[ argIdx ]._isVar || args[ argIdx ]._isExprArray || args[ argIdx ]._isCall || args[ argIdx ]._isPath ) {
 							argsAreLits = false;
 							break;
 						}
 					}
 					
+					//function applied on its inverse function
 					if ( funcIsLit && args[ 0 ] && args[ 0 ]._func && args[ 0 ]._func.inverse === func )
 						return args[ 0 ]._args[ 0 ];
 					
+					//literal function and arguments
 					if ( funcIsLit && argsAreLits )
 						return func.apply( this, args );
 					
 					var c = this instanceof FunctionCall ? this : Object.create( FunctionCall.prototype );
 					
-					c._guid	= "#f" + FunctionCall.prototype._guid++;
+					c._guid = "#f" + FunctionCall.prototype._guid++;
 					
 					c._func = func;
 					c._args = args;
@@ -3195,7 +3136,7 @@
 							}
 						}
 					
-					} else if ( this._func._isVar ) {
+					} else if ( this._func._isVar || this._func._isCall || this._func._isPath ) {
 						if ( this._func === update )
 							outOfDate = true;
 					}
@@ -3218,7 +3159,7 @@
 								this._funcLit = this._func.valueOf();
 							}
 						
-						} else if ( this._func && this._func._isVar ) {
+						} else if ( this._func && ( this._func._isVar || this._func._isCall || this._func._isPath ) ) {
 							this._funcLit = this._func.valueOf();
 						
 						} else {
@@ -3249,7 +3190,7 @@
 								}
 							}
 						
-						} else if ( this._args[ j ]._isVar ) {
+						} else if ( this._args[ j ]._isVar || this._args[ j ]._isCall || this._args[ j ]._isPath ) {
 							if ( this._args[ j ] === update )
 								outOfDate = true;
 						
@@ -3257,7 +3198,7 @@
 						
 						//and evaluate arguments to literals
 						if ( outOfDate ) {
-							if ( this._args[ j ]._isExprArray || this._args[ j ]._isVar )
+							if ( this._args[ j ]._isExprArray || this._args[ j ]._isVar || this._args[ j ]._isCall || this._args[ j ]._isPath )
 								this._argLits[ j ] = this._args[ j ].valueOf();
 							else
 								this._argLits[ j ] = this._args[ j ];
@@ -3324,8 +3265,8 @@
 					}
 				},
 				
-				remove : function( func, args ) {
-					var call;
+				_search : function( func, args ) {
+					var call = undefined;
 					
 					//find handler to FunctionCall instance
 					var checkCall = function( v ) {
@@ -3334,7 +3275,8 @@
 								continue;
 							
 							if ( equiv( func, v._partOf[ id ]._func ) &&
-								 equiv( args, v._partOf[ id ]._args ) ) {
+								 ( ( args === undefined && v._partOf[ id ]._args.length === 0 ) ||
+								 equiv( args, v._partOf[ id ]._args ) ) ) {
 								call = v._partOf[ id ];
 								return false;
 							}
@@ -3345,19 +3287,21 @@
 					
 					var callFound = !doWithReactive( func, checkCall );
 					
-					if ( !callFound ) {
-						var argIdx = args.length;
-						while ( argIdx-- )
-							if ( callFound = !doWithReactive( args[ argIdx ], checkCall ) )
-								break;
-					}
+					if ( callFound || args === undefined )
+						return call;
 					
-					if ( !callFound )
-						//error ( "Function call to remove does not exist!" );
-						return false;
+					var argIdx = args.length;
+					while ( argIdx-- )
+						if ( callFound = !doWithReactive( args[ argIdx ], checkCall ) )
+							break;
 					
+					return call;
+				},
+				
+				remove : function( call ) {
 					call.unlink();
 					
+					delete call._guid;
 					delete call._func;
 					delete call._funcLit;
 					delete call._ctxtLit;
@@ -3370,8 +3314,8 @@
 			};
 			
 			var PropPath = function( path, rev, val, del ) {
-				var p = PropPath.prototype._search( path );
-				if ( p === undefined ) {
+				var p = path;
+				if ( !path._isPath ) {
 					p = this instanceof PropPath ? this : Object.create( PropPath.prototype );
 					
 					p._guid = "#p" + PropPath.prototype._guid++;
@@ -3441,6 +3385,9 @@
 					return undefined;
 				},
 				
+				valueOf : function() {
+					return this._ctxt[ this._prop ];
+				},
 				_updatePath : function() {
 					//revert value of old path, if marked so
 					if ( this._rev ) {
@@ -3453,8 +3400,16 @@
 					//get new obj and prop
 					var i, l;
 					this._ctxt = this._path[ 1 ].valueOf();
-					for ( i = 2, l = this._path.length-1; i<l; i++ )
+					
+					if ( typeof this._ctxt !== "object" )
+						error( "Invalid property path: " + String( this._path ) + "!" );
+					
+					for ( i = 2, l = this._path.length-1; i<l; i++ ) {
 						this._ctxt = this._ctxt[ this._path[ i ].valueOf() ];
+						
+						if ( typeof this._ctxt !== "object" )
+							error( "Invalid property path " + String( this._path ) + "!" );
+					}
 					
 					this._prop = this._path[ l ].valueOf();
 					
@@ -3494,6 +3449,9 @@
 				unlinkVal : function() {
 					var rmvPartOf = function( v ) {
 							delete v._partOf[ this._guid ];
+							
+							if ( v._isCall )
+								v.unlink();
 						};
 					
 					//remove partOf on functions side
@@ -3502,34 +3460,37 @@
 				unlinkPath : function() {
 					var rmvPartOf = function( v ) {
 							delete v._partOf[ this._guid ];
+							
+							if ( v._isCall )
+								v.unlink();
 						};
 					
 					//remove partOf on functions side
 					doWithReactive.call( this, this._path, rmvPartOf );
 				},
-				rmv : function() {
+				remove : function( path ) {
 					//revert value of old path, if marked so
-					if ( this._rev ) {
-						if ( this._backupDel )
-							delete this._ctxt[ this._prop ];
+					if ( path._rev ) {
+						if ( path._backupDel )
+							delete path._ctxt[ path._prop ];
 						else
-							this._ctxt[ this._prop ] = this._backupVal;
+							path._ctxt[ path._prop ] = path._backupVal;
 					}
 					
-					this.unlinkVal();
-					this.unlinkPath();
+					path.unlinkVal();
+					path.unlinkPath();
 					
-					delete PropPath.prototype._paths[ this._guid ];
+					delete PropPath.prototype._paths[ path._guid ];
 					
-					delete this._guid;
-					delete this._path;
-					delete this._ctxt;
-					delete this._prop;
-					delete this._val;
-					delete this._del;
-					delete this._rev;
-					delete this._backupVal;
-					delete this._backupDel;
+					delete path._guid;
+					delete path._path;
+					delete path._ctxt;
+					delete path._prop;
+					delete path._val;
+					delete path._del;
+					delete path._rev;
+					delete path._backupVal;
+					delete path._backupDel;
 					
 					return true;
 				},
@@ -3733,7 +3694,7 @@
 						
 						ret = interpret.apply( props, arguments );
 						
-						if ( ret && ( ret._isVar || ret._isCall || ret._isExprArray ) )
+						if ( ret && ( ret._isVar || ret._isCall || ret._isPath || ret._isExprArray ) )
 							ret = ret.valueOf();
 						
 						return ret;
