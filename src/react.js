@@ -39,18 +39,27 @@
 			if ( arr1 === arr2 )
 				return true;
 			
+			if ( arr2 && arr2._value &&
+				 arr1 && arr1._value && arr1._value.constructor === Array )
+				return equiv( arr1._value, arr2._value ) ? true : false;
+			
 			if ( !arr1 || arr1.constructor !== Array || !arr2 || arr2.constructor !== Array ||
 				 arr1.length !== arr2.length)
 				return false;
 			
 			var i = arr1.length;
 			while ( i-- ) {
-				if ( arr1[ i ].constructor === Array ) {
+				if ( arr1[ i ] && arr1[ i ].constructor === Array ) {
 					if ( equiv( arr1[ i ], arr2[ i ] ) )
 						continue;
 					else
 						return false;
-				
+				} else if ( arr2[ i ] && arr2[ i ]._value &&
+							arr1[ i ] && arr1[ i ]._value && arr1[ i ]._value.constructor === Array ) {
+					if ( equiv( arr1[ i ]._value, arr2[ i ]._value ) )
+						continue;
+					else
+						return false;
 				} else if ( arr1[ i ] !== arr2[ i ] ) {
 					return false;
 				}
@@ -80,6 +89,15 @@
 					return false;
 			
 			return true;
+		},
+		countProps = function( obj, own ) {
+			var n = 0;
+			
+			for ( var key in obj )
+				if ( own ? obj.hasOwnProperty( key ) : key in obj )
+					n++;
+			
+			return n;
 		};
 	
 	var error = function( msg ) {
@@ -94,259 +112,6 @@
 			
 			var DepObj = function(){};
 			DepObj.prototype = {};
-			
-			var doWithReactive = function( rea, f, fExpr ) {
-				var depId;
-				
-				if ( !rea )
-					return true;
-				
-				fExpr = fExpr || f;
-				
-				if ( rea._isExprArray ) {
-					for ( depId in rea._dep ) {
-						if ( fExpr.call( this, rea._dep[ depId ] ) === false )
-							return false;
-					}
-				
-				} else if ( ( rea._isVar && !rea._locked ) || rea._isPath || rea._isCall ) {
-					if ( f.call( this, rea ) === false )
-						return false;
-				}
-				
-				return true;
-			};
-			
-			//value array properties
-			var makeExprArray = ( function() {
-					var valueOf = function() {
-							try {
-								var op = this[ 0 ],
-									idx,
-									ret,
-									cur,
-									context;
-								
-								context = Array.prototype.slice.apply( this._context || arguments );
-								idx = context.length;
-								while( idx-- )
-									context[ idx ] = context[ idx ].valueOf();
-								
-								idx = this.length;
-								if ( idx === 2 ) {
-									//unary
-									if ( this[ 1 ]._isVar || this[ 1 ]._isExprArray || this[ 1 ]._isCall )
-										cur = this[ 1 ].valueOf.apply( this[ 1 ], context );
-									else if ( context.length && typeof this[ 1 ] === "function" )
-										cur = this[ 1 ].apply( this[ 1 ], context );
-									else
-										cur = this[ 1 ];
-									
-									return operators[ op ].nudEval.call( this, cur, ret );
-								}
-								
-								//binary with two or more operands
-								while( idx--, idx > 0 ) {
-									if ( this[ idx ]._isVar || this[ idx ]._isExprArray || this[ idx ]._isCall )
-										cur = this[ idx ].valueOf.apply( this[ idx ], context );
-									else if ( context.length && typeof this[ idx ] === "function" )
-										cur = this[ idx ].apply( this[ idx ], context );
-									else
-										cur = this[ idx ];
-									
-									ret = ( ret === undefined  ) ? cur : operators[ op ].ledEval.call( this, cur, ret );
-								}
-								
-								return ret;
-							
-							} catch( e ) {
-								error( "valArray.valueOf: " + e.message );
-							}
-						},
-						toString = function() {
-							try {
-								var str = "",
-									op = this[ 0 ];
-								
-								for ( var idx = 1, len = this.length; idx < len; idx++ ) {
-									if ( !this[ idx ] ) {
-										str += this[ idx ];
-									
-									} else if ( this[ idx ]._isExprArray ) {
-										//replace + with - in case of negative number and summation
-										if ( op === "+" && this[ idx ][ 0 ] === "*" && this[ idx ][ 1 ] < 0 ) {
-											str = str.slice( 0, -op.length );
-										}
-										
-										if ( ( op === "*" && this[ idx ][ 0 ] === "+" ) || op === "^" )
-											str += "(";
-										
-										str += toString.call( this[ idx ] );
-										
-										if ( ( op === "*" && this[ idx ][ 0 ] === "+" ) || op === "^" )
-											str += ")";
-									
-									} else {
-										if ( op === "^" && idx > 2 && len > 3 )
-											str = "(" + str;
-										
-										if ( idx === 1 && op === "*" && this[ idx ] === -1 ) {
-											str += "-";
-											continue;
-										}
-										
-										if ( this[ idx ]._isVar ) {
-											if ( this[ idx ]._isNamed )
-												str += this[ idx ]._key;
-											else
-												str += "{" + this[ idx ].toString() + "}";
-										
-										} else {
-											if ( typeof this[ idx ] === "number" && op === "+" && this[ idx ] < 0 ) {
-												str = str.slice( 0, -op.length );
-												str += "-" + Math.abs( this[ idx ] );
-											} else {
-												str += this[ idx ];
-											}
-										}
-										
-										if ( op === "^" && idx < len-1 && len > 3 )
-											str += ")";
-									}
-									
-									if ( idx > 1 ) {
-										if ( op === "(" )
-											str += " ) ";
-										else if ( op === "[" )
-											str += " ] ";
-										else if ( op === "{" )
-											str += " } ";
-									}
-									
-									if ( idx < len-1 ) {
-										if ( op !== "." )
-											str += " ";
-										
-										str += op;
-										
-										if ( op !== "." )
-											str += " ";
-									}
-								}
-								
-								return str;
-							
-							} catch( e ) {
-								error( "valArray.toString:" + e.message );
-							}
-						},
-						addDep = function() {
-							//add new dependancies
-							var i, l = arguments.length, arg, id;
-							
-							if ( l && this._dep === null )
-								this._dep = Object.create( DepObj.prototype );
-							
-							for ( i = 0; i < l; i++ ) {
-								arg = arguments[ i ];
-								
-								if ( !arg )
-									continue;
-								
-								if ( arg instanceof DepObj ) {
-									for ( id in arg ) {
-										this._dep[ arg[ id ]._guid ] = arg[ id ];
-									}
-								
-								} else if ( arg && ( arg._isVar || arg._isCall || arg._isPath ) ) {
-									this._dep[ arg._guid ] = arg;
-								}
-							}
-							
-							return this;
-						},
-						_checkDep = function( _dep ) {
-							var i, l, id1, id2;
-							
-							if ( _dep.constructor === Array ) {
-								_dep = _dep._dep;
-								DEPLOOP : for ( id2 in _dep ) {
-									for ( i = 1, l = this.length; i < l; i++ ) {
-										if ( this[ i ] && this[ i ].constructor === Array ) {
-											for ( id1 in this[ i ]._dep ) {
-												if ( this[ i ]._dep[ id1 ] === _dep[ id2 ] )
-													continue DEPLOOP;
-											}
-										
-										} else {
-											if ( this[ i ] === _dep[ id2 ] )
-												continue DEPLOOP;
-										}
-									}
-									
-									delete this._dep[ id2 ];
-								}
-							
-							} else {
-								for ( i = 1, l = this.length; i < l; i++ ) {
-									if ( this[ i ] && this[ i ].constructor === Array ) {
-										for ( id1 in this[ i ]._dep ) {
-											if ( this[ i ]._dep[ id1 ] === _dep ) {
-												return;
-											}
-										}
-									
-									} else {
-										if ( this[ i ] === _dep ) {
-											return;
-										}
-									}
-								}
-								
-								delete this._dep[ _dep._guid ];
-							}
-						},
-						_makeVar = function() {
-							delete this._checkDep;
-							delete this.addDep;
-							delete this._makeVar;
-							delete this.makeCtxtArray;
-						},
-						inCtxt = function( ctxt ) {
-							delete this._isValArray;
-							this._isCtxtArray = true;
-							this._context = ctxt;
-							return this;
-						},
-						unlinkCalls = function() {
-							for ( var id in this._dep ) {
-								if ( this._dep[ id ]._isCall )
-									this._dep[ id ].unlink();
-							}
-						};
-					
-					return function( arr ) {
-						arr.valueOf 	 = valueOf;
-						arr.toString     = toString;
-						
-						arr._makeVar		 = _makeVar;
-						arr.inCtxt       = inCtxt;
-						
-						arr._isValArray  = true;
-						arr._isExprArray = true;
-						arr._dep		 = arr._dep || null;
-						arr._checkDep 	 = _checkDep;
-						arr.addDep		 = addDep;
-						arr.unlinkCalls  = unlinkCalls;
-						
-						arr.addDep.apply( arr, Array.prototype.slice.call( arguments, 1 ) );
-						
-						if ( arr[ 0 ] === "." )
-							arr._propAccess = true;
-						
-						return arr;
-					};
-				}() );
 			
 			//token parsing and evaluation
 			var operators = {},		//table holding defined operators
@@ -367,8 +132,8 @@
 				opType = {
 					infix : function( s, bp, led ) {
 						s.led = led || function ( expr ) {
-							this.first = expr.o[ expr.p ];
-							this.second = undefined;
+							expr.p in expr.o && ( this.first = expr.o[ expr.p ] );
+							//this.second = undefined;
 							this.ledEval = operators[ this.id ].ledEval;
 							expr.o[ expr.p ] = this;
 							
@@ -386,8 +151,8 @@
 					
 					infixr : function( s, bp, led ) {
 						s.led = led || function ( expr ) {
-							this.first = expr.o[ expr.p ];
-							this.second = undefined;
+							expr.p in expr.o && ( this.first = expr.o[ expr.p ] );
+							//this.second = undefined;
 							this.ledEval = operators[ this.id ].ledEval;
 							expr.o[ expr.p ] = this;
 							
@@ -405,7 +170,7 @@
 
 					prefix : function( s, bp, nud ) {
 						s.nud = nud || function ( expr ) {
-							this.first = undefined;
+							//this.first = undefined;
 							this.nudEval = operators[ this.id ].nudEval;
 							expr.o[ expr.p ] = this;
 							
@@ -423,8 +188,8 @@
 					
 					assignment : function( s, bp, led ) {
 						return opType.infixr( s, bp, led || function ( expr ) {
-							this.first = expr.o[ expr.p ];
-							this.second = undefined;
+							expr.p in expr.o && ( this.first = expr.o[ expr.p ] );
+							//this.second = undefined;
 							this.assignment = true;
 							this.ledEval = operators[ this.id ].ledEval;
 							expr.o[ expr.p ] = this; 
@@ -445,7 +210,7 @@
 					
 					"delete" : function( s, bp, nud ) {
 						return opType.prefix( s, bp, nud || function ( expr ) {
-							this.first = undefined;
+							//this.first = undefined;
 							this.assignment = true;
 							this.nudEval = operators[ this.id ].nudEval;
 							expr.o[ expr.p ] = this;
@@ -463,8 +228,8 @@
 					
 					call : function( s, bp, led ) {
 						return opType.infix( s, bp, led || function( expr ) {
-							this.first = expr.o[ expr.p ];
-							this.second = undefined;
+							expr.p in expr.o && ( this.first = expr.o[ expr.p ] );
+							//this.second = undefined;
 							this.call = true;
 							this.ledEval = operators[ this.id ].ledEval;
 							expr.o[ expr.p ] = this;
@@ -504,19 +269,13 @@
 											function( operand ) {
 												var type = typeof operand;
 												
-												if ( operand && operand._isValArray ) {
-													//reactive value arrays are referenced externally, copy them
-													operand = makeExprArray( operand.slice( 0 ), operand._dep );
-													type = "arr";
-												} else {
-													type = !operand || type === "number" || type === "string" || type === "boolean" ? 
-																"lit" :
-															operand._isValArray ?
-																"arr" :
-															operand._isVar || operand._isCtxtArray || operand._isCall || operand._isPath || ( operand._isFunc && delete operand._isFunc ) ?
-																"ref" :
-																"lit";
-												}
+												type = !operand ? 
+														"lit" :
+													operand instanceof Expression && !operand._inCtxt ?
+														"arr" :
+													operand instanceof Reactive || ( operand._isFunc && delete operand._isFunc ) ?
+														"ref" :
+														"lit";
 												
 												return op.nudEval[ type ].apply( this, arguments );
 											};
@@ -524,7 +283,7 @@
 							if ( type === "prefix" )
 								op.nudEval = function( operand, undef, interpreter ) {
 									//check for overloaded operators
-									if ( operand && !operand._isVar && operand[ id ] )
+									if ( operand && !( operand instanceof Variable ) && operand[ id ] )
 										return operand[ id ].call( operand );
 									
 									//standard operator behavior
@@ -547,35 +306,21 @@
 											function( left, right ) {
 												var typeL, typeR;
 												
-												typeL = typeof left;
-												if ( left && left._isValArray ) {
-													//reactive value arrays are referenced externally, copy them
-													left = makeExprArray( left.slice( 0 ), left._dep );
-													typeL = "arr";
-												} else {
-													typeL = !left || typeL === "number" || typeL === "string" || typeL === "boolean" ? 
-																"lit" :
-															left._isValArray ?
-																"arr" :
-															left._isVar || left._isCtxtArray || left._isCall || left._isPath || ( left._value && left._value._isValArray ) || ( left._isFunc && delete left._isFunc) ?
-																"ref" :
-																"lit";
-												}
+												typeL = !left ? 
+														"lit" :
+													left instanceof Expression && !left._inCtxt ?
+														"arr" :
+													left instanceof Reactive || ( left._isFunc && delete left._isFunc) ?
+														"ref" :
+														"lit";
 												
-												typeR = typeof right;
-												if ( right && right._isValArray ) {
-													//reactive value arrays are referenced externally, copy them
-													right = makeExprArray( right.slice( 0 ), right._dep );
-													typeR = "arr";
-												} else {
-													typeR = !right || typeR === "number" || typeR === "string" || typeR === "boolean" ? 
-																"lit" :
-															right._isValArray ?
-																"arr" :
-															right._isVar || right._isCtxtArray || right._isCall || right._isPath || ( right._value && right._value._isValArray ) || ( right._isFunc && delete right._isFunc) ?
-																"ref" :
-																"lit";
-												}
+												typeR = !right ? 
+														"lit" :
+													right instanceof Expression && !right._inCtxt ?
+														"arr" :
+													right instanceof Reactive || ( right._isFunc && delete right._isFunc) ?
+														"ref" :
+														"lit";
 												
 												return op.ledEval[ typeL ][ typeR ].apply( this, arguments );
 											};
@@ -583,7 +328,7 @@
 							if ( type !== "assignment" )
 								op.ledEval = function( left, right, interpreter ) {
 									//check for overloaded operators
-									if ( left && !left._isVar && right && !right._isVar ) {
+									if ( left && !(left instanceof Variable) && right && !(right instanceof Variable) ) {
 										if ( left[ id ] )
 											return left[ id ].call( left, right );
 										
@@ -622,18 +367,16 @@
 				if ( vars === undefined )
 					return interpreter.nameTable.clean();
 				
-				if ( !vars._isVar && ( !vars._isValArray || vars[ 0 ] !== "," ) )
-					error( "'except' has to be followed by a list of one or more variable names" );
+				if ( !(vars instanceof Variable) && ( !vars instanceof Expression || vars._value.op !== "," ) )
+					error( "'cleanExcept' has to be followed by a list of one or more variable names" );
 				
 				var varObj = {};
-				if ( vars._isValArray ) {
-					vars.shift();
-					
-					var i = vars.length;
+				if ( vars instanceof Expression ) {
+					var i = vars._value.length;
 					
 					while ( i-- ) {
-						if ( vars[ i ] )
-							varObj[ vars[ i ]._key ] = vars[ i ];
+						if ( vars._value[ i ] )
+							varObj[ vars._value[ i ]._key ] = vars._value[ i ];
 					}
 				
 				} else if ( vars ) {
@@ -646,51 +389,35 @@
 			operator( ",", "infix", 5, null, ( function() {
 					var ret = {},
 						func = function( left, right ) {
-							return makeExprArray(
-								[ ",", left, right ],
-								left,
-								right && right._isValArray ? right._dep : right
-							);
+							return Expression( ",", [ left, right ] );
 						},
 						funcArr = function( left, right ) {
-							if ( right._isValArray && right[ 0 ] === "," ) {
+							if ( right instanceof Expression && right._value.op === "," ) {
 								right.unshift( left );
-								right.addDep( left._dep );
 								
 								return right;
 							}
 							
-							return makeExprArray(
-								[ ",", left, right ],
-								left._dep,
-								right && right._isValArray ? right._dep : right
-							);
+							return Expression( ",", [ left, right ] );
 						},
 						arrFunc = function( left, right ) {
-							if ( left[ 0 ] === "," ) {
-								if ( right._isValArray && right[ 0 ] === "," ) {
-									right.splice( 0, 0, left.length, 0 );
+							if ( left._value.op === "," ) {
+								if ( right instanceof Expression && right._value.op === "," ) {
+									right.splice( 0, 0, left._value.length, 0 );
 									left.splice.apply( left, right );
-									left.addDep( right._dep );
 								} else {
 									left.push( right );
-									left.addDep( right );
 								}
 								
 								return left;
 							
-							} else if ( right._isValArray && right[ 0 ] === "," ) {
+							} else if ( right instanceof Expression && right._value.op === "," ) {
 								right.unshift( left );
-								right.addDep( left._dep );
 								
 								return right;
 							}
 							
-							return makeExprArray(
-								[ ",", left, right ],
-								left._dep,
-								right && right._isValArray ? right._dep : right
-							);
+							return Expression( ",", [ left, right ] );
 						};
 					
 					each( [ "lit", "ref" ], function( idxL, typeL ) {
@@ -711,25 +438,19 @@
 			);
 			
 			operator( "=", "assignment", 10, null, function( v, val, interpreter ) {
-				if ( !v || ( !v._isVar && !v._isPath && v.id !== "(id)" && !v._propAccess ) )
+				var isPropAccess = v instanceof Expression && v._value.op === ".",
+					isVar  = !isPropAccess && v instanceof Variable,
+					isPath = !isVar && v instanceof PropPath;
+				
+				if ( !v || ( !isVar && !isPath && v.id !== "(id)" && !isPropAccess ) )
 					error( "Bad lvalue: no variable or object property." );
 				
 				assignTo = null;	//extern variable to keep track of assignments
 				
-				if ( v._propAccess || v._isPath ) {
-					if ( isEmptyObj( v._dep ) && ( !val || ( !val._isVar && !val._isExprArray && !val._isCall && !val._isPath ) ) ) {
-						//literals only array
-						var ctxt, i, l;
-						
-						ctxt = v[ 1 ];
-						for ( i = 2, l = v.length-1; i<l; i++ )
-							ctxt = ctxt[ v[ i ] ];
-						
-						return ctxt[ v[ l ] ] = val;
-					}
-					
-					return PropPath( v, false, val, false )._val;
-				}
+				if ( isPropAccess )
+					return PropPath( v, false, val, false )._evaled.value;
+				else if ( isPath )
+					return v.set( false, val, false )._evaled.value;
 				
 				return interpreter.nameTable.set( v._key || v.value, val );
 			} );
@@ -748,7 +469,7 @@
 						arity 	: "operator"
 					};
 					expr = token.led( expr );
-					expr.o.second = expr.o.first;
+					"first" in expr.o && ( expr.o.second = expr.o.first );
 					
 					op = operators[ this.value ];
 					token = {
@@ -809,7 +530,7 @@
 						arity 	: "operator"
 					};
 					expr = token.led( expr );
-					expr.o.second = expr.o.first;
+					"first" in expr.o && ( expr.o.second = expr.o.first );
 					
 					if ( this.value !== "(" ) {
 						op = operators[ this.value ];
@@ -831,10 +552,16 @@
 			);
 			
 			operator( "~=", "assignment", 10, null, function( path, val ) {
-				if ( !path || ( !path._propAccess && !path._isPath ) )
+				var isPath = path instanceof PropPath,
+					isPropAccess = !isPath && path instanceof Expression && path._value.op === ".";
+				
+				if ( !path || ( !isPropAccess && !isPath ) )
 					error( "Bad lvalue: no object property." );
 				
-				return PropPath( path, true, val, false );
+				if ( isPropAccess )
+					return PropPath( path, true, val, false )._evaled.value;
+				else 
+					return path.set( true, val, false )._evaled.value;
 			} );
 			
 			operator( "?", "infix", 20, null, ( function() {
@@ -843,17 +570,13 @@
 					//choice is always an array
 					ret.lit = {};
 					ret.lit.arr = function( cond, choice ) {
-						return cond ? choice[1] : choice[2];
+						return cond ? choice._value[ 0 ] : choice._value[ 1 ];
 					};
 					
 					ret.ref = {};
-					ret.ref.arr = function( cond, choice ) {
-						return makeExprArray( [ "?", cond, choice ], cond, choice._dep );
-					};
-					
 					ret.arr = {};
-					ret.arr.arr = function( cond, choice ) {
-						return makeExprArray( [ "?", cond, choice ], cond._dep, choice._dep );
+					ret.ref.arr = ret.arr.arr = function( cond, choice ) {
+						return Expression( "?", [ cond, choice ] );
 					};
 					
 					return ret;
@@ -861,40 +584,18 @@
 			);
 			
 			operator( ":", "infixr", 21, null, ( function() {
-					var ret = {};
+					var ret = {},
+						
+						func = function( onTrue, onFalse ) {
+							return Expression( ":", [ onTrue, onFalse ] );
+						};
 					
-					ret.lit = {};
-					ret.lit.lit = function( onTrue, onFalse ) {
-						return makeExprArray( [ ":", onTrue, onFalse ] );
-					};
-					ret.lit.ref = function( onTrue, onFalse ) {
-						return makeExprArray( [ ":", onTrue, onFalse ], onFalse );
-					};
-					ret.lit.arr = function( onTrue, onFalse ) {
-						return makeExprArray( [ ":", onTrue, onFalse ], onFalse._dep );
-					};
-					
-					ret.ref = {};
-					ret.ref.lit = function( onTrue, onFalse ) {
-						return makeExprArray( [ ":", onTrue, onFalse ], onTrue );
-					};
-					ret.ref.ref = function( onTrue, onFalse ) {
-						return makeExprArray( [ ":", onTrue, onFalse ], onTrue, onFalse );
-					};
-					ret.ref.arr = function( onTrue, onFalse ) {
-						return makeExprArray( [ ":", onTrue, onFalse ], onTrue, onFalse._dep );
-					};
-					
-					ret.arr = {};
-					ret.arr.lit = function( onTrue, onFalse ) {
-						return makeExprArray( [ ":", onTrue, onFalse ], onTrue._dep );
-					};
-					ret.arr.ref = function( onTrue, onFalse ) {
-						return makeExprArray( [ ":", onTrue, onFalse ], onTrue._dep, onFalse );
-					};
-					ret.arr.arr = function( onTrue, onFalse ) {
-						return makeExprArray( [ ":", onTrue, onFalse ], onTrue._dep, onFalse._dep );
-					};
+					each( [ "lit", "ref", "arr" ], function( idxL, typeL ) {
+						ret[ typeL ] = {};
+						each( [ "lit", "ref", "arr" ], function( idxR, typeR ) {
+							ret[ typeL ][ typeR ] = func;
+						} );
+					} );
 					
 					return ret;
 				}() )
@@ -911,19 +612,31 @@
 							if ( left )
 								return left;
 							
-							return makeExprArray( [ op, left, right ], right );
+							return Expression( op, [ left, right ] );
 						},
 						litarr : function( left, right ) {
 							if ( left )
 								return left;
 							
-							return makeExprArray( [ op, left, right ], right );
+							return Expression( op, [ left, right ] );
 						}
 					},
 					"&&" : {
 						bp : 30,
 						litlit : function( lit1, lit2 ) {
 							return lit1 && lit2;
+						},
+						litref : function( left, right ) {
+							if ( left )
+								return right;
+							
+							return Expression( op, [ left, right ] );
+						},
+						litarr : function( left, right ) {
+							if ( left )
+								return right;
+							
+							return Expression( op, [ left, right ] );
 						}
 					}
 				},
@@ -932,38 +645,31 @@
 						var ret = {},
 							
 							compare = function( left, right ) {
-								return makeExprArray( [ op, left, right ], left, right );
+								return Expression( op, [ left, right ] );
 							},
 							
 							compareArr = function( left, right ) {
-								if ( left.constructor === Array && left[ 0 ] === op ) {
-									if ( right.constructor === Array && right[ 0 ] === op ) {
+								if ( left instanceof Expression && left._value.op === op ) {
+									if ( right instanceof Expression && right._value.op === op ) {
 										//reuse right array
-										right[ 0 ] = 0;
-										right.unshift( left.length );
+										right.unshift( left._value.length, 0 );
 										
-										//-> left.splice( left.length, 0, right[ 1 ], right[ 2 ], ... )
-										Array.prototype.splice.apply( left, right );
-										left.addDep( right._dep );
+										//-> left.splice( left._value.length, 0, right[ 1 ], right[ 2 ], ... )
+										Array.prototype.splice.apply( left._value, right._value );
 									
 									} else {
 										left.push( right );
-										left.addDep( right );
 									}
 									
 									return left;
 								
-								} else if ( right.constructor === Array && right[ 0 ] === op ) {
-									right.splice( 1, 0, left );
-									right.addDep( left );
+								} else if ( right instanceof Expression && right._value.op === op ) {
+									right.unshift( left );
 									
 									return right;
+								
 								} else {
-									return makeExprArray(
-										[ op, left, right ],
-										left._isExprArray ? left._dep : left,
-										right._isExprArray ? right._dep : right._dep
-									);
+									return Expression( op, [ left, right ] );
 								}
 							};
 						
@@ -1015,36 +721,14 @@
 				},
 				function( op, opProps ) {
 					operator( op, "infixr", opProps.bp, null, ( function() {
-						var ret = {},
-							
-							refref = function( left, right ) {
-								return makeExprArray( [ op, left, right ], left, right );
-							},
-							refarr = function( left, right ) {
-								return makeExprArray( [ op, left, right ], left, right._dep );
-							},
-							arrref = function( left, right ) {
-								return makeExprArray( [ op, left, right ], left._dep, right );
-							},
-							arrarr = function( left, right ) {
-								return makeExprArray( [ op, left, right ], left._dep, right._dep );
-							},
-						
-							compare = {
-								litref : refref,
-								litarr : refarr,
-								reflit : refref,
-								refref : refref,
-								refarr : refarr,
-								arrlit : arrref,
-								arrref : arrref,
-								arrarr : arrarr
-							};
+						var ret = {};
 						
 						each( [ "lit", "ref", "arr" ], function( idxL, typeL ) {
 							ret[ typeL ] = {};
 							each( [ "lit", "ref", "arr" ], function( idxR, typeR ) {
-								ret[ typeL ][ typeR ] = opProps[ typeL + typeR ] || compare[ typeL + typeR ];
+								ret[ typeL ][ typeR ] = opProps[ typeL + typeR ] || function( left, right ) {
+									return Expression( op, [ left, right ] );
+								};
 							} );
 						} );
 						
@@ -1083,11 +767,7 @@
 						var ret = {},
 							
 							func = function( left, right ) {
-								return makeExprArray(
-									[ op, left, right ],
-									left._isExprArray ? left._dep : left,
-									right._isExprArray ? right._dep : right
-								);
+								return Expression( op, [ left, right ] );
 							};
 						
 						each( [ "lit", "ref", "arr" ], function( idxL, typeL ) {
@@ -1112,17 +792,17 @@
 							base1, base2,
 							exp1, exp2;
 						
-						if ( fst.constructor === Array && fst[ 0 ] === "^" && fst.length > 2 ) {
-							base1 = fst[ 1 ];
-							exp1  = fst.length > 3 ? ( fst.splice( 1, 1 ), fst ) : fst[ 2 ];
+						if ( fst instanceof Expression && fst._value.op === "^" && fst._value.length > 1 ) {
+							base1 = fst._value[ 0 ];
+							exp1  = fst._value.length > 2 ? ( fst.shift(), fst ) : fst._value[ 1 ];
 						} else {
 							base1 = fst;
 							exp1  = 1;
 						}
 						
-						if ( snd.constructor === Array && snd[ 0 ] === "^" && snd.length > 2 ) {
-							base2 = snd[ 1 ];
-							exp2  = snd.length > 3 ? ( snd.splice( 1, 1 ), snd ) : snd[ 2 ];
+						if ( snd instanceof Expression && snd._value.op === "^" && snd._value.length > 1 ) {
+							base2 = snd._value[ 0 ];
+							exp2  = snd._value.length > 2 ? ( snd.shift(), snd ) : snd._value[ 1 ];
 						} else {
 							base2 = snd;
 							exp2  = 1;
@@ -1135,7 +815,7 @@
 							} else if ( typeof exp1 === "number" && typeof exp2 === "number" &&
 										( ( exp1 < 0 && exp2 < 0 ) || ( exp1 > 0 && exp2 > 0 ) ) ) {
 								var tmp = Math.abs( exp1 ) < Math.abs( exp2 ) ? exp1 : exp2;
-								shared = tmp === 1 ? base1 : makeExprArray( [ "^", base1, tmp ], base1._isExprArray ? base1._dep : base1 );
+								shared = tmp === 1 ? base1 : Expression( "^", [ base1, tmp ] );
 								tmp = operators[ "^" ].ledEval.call( this, shared, -1 );
 								fst = operators[ "*" ].ledEval.call( this, fst, tmp );
 								snd = operators[ "*" ].ledEval.call( this, snd, tmp );
@@ -1160,19 +840,19 @@
 								snd : snd
 							},
 							idx = {
-								fst : typeof sel.fst[ 1 ] === "number" ? 2 : 1,
-								snd : typeof sel.snd[ 1 ] === "number" ? 2 : 1
+								fst : fst !== undefined && typeof fst._value[ 0 ] === "number" ? 1 : 0,
+								snd : snd !== undefined && typeof snd._value[ 0 ] === "number" ? 1 : 0
 							}
 						
 						//gather shared factors from front and back
 						for ( var dir in shared ) {
 							while ( sel.fst !== 1 && sel.snd !== 1 ) {
 								res = factorOut.call( this,
-									( sel.fst && sel.fst[ 0 ] == "*" && sel.fst.length > 2 && 
-									  sel.fst[ dir == "front" ? idx.fst : sel.fst.length-1 ]
+									( sel.fst && sel.fst._value && sel.fst._value.op === "*" && sel.fst._value.length > 1 && 
+									  sel.fst._value[ dir == "front" ? idx.fst : sel.fst._value.length-1 ]
 									) || sel.fst,
-									( sel.snd && sel.snd[ 0 ] == "*" && sel.snd.length > 2 && 
-									  sel.snd[ dir == "front"  ? idx.snd : sel.snd.length-1 ]
+									( sel.snd && sel.snd._value && sel.snd._value.op === "*" && sel.snd._value.length > 1 && 
+									  sel.snd._value[ dir == "front"  ? idx.snd : sel.snd._value.length-1 ]
 									) || sel.snd
 								);
 								
@@ -1184,29 +864,26 @@
 									shared[ dir ] = res.shared;
 								
 								} else {
-									if ( !shared[ dir ]._isValArray )
-										shared[ dir ] = makeExprArray( [ "*", shared[ dir ] ], shared[ dir ] );
+									if ( !(shared[ dir ] instanceof Expression) )
+										shared[ dir ] = Expression( "*", [ shared[ dir ] ] );
 									
 									shared[ dir ].push( res.shared );
-									shared[ dir ].addDep( res.shared._isExprArray ? res.shared._dep : res.shared );
 								}
 								
 								//reorganize fst/snd
 								for ( var key in sel ) {
-									if ( sel[ key ] && sel[ key ][ 0 ] == "*" && sel[ key ].length > 2 ) {
+									if ( sel[ key ] && sel[ key ]._value.op === "*" && sel[ key ]._value.length > 1 ) {
 										if ( res[ key ] !== 1 ) {
-											sel[ key ][ dir == "front" ? idx[ key ] : sel[ key ].length-1 ] = res[ key ];
+											sel[ key ]._value[ dir == "front" ? idx[ key ] : sel[ key ]._value.length-1 ] = res[ key ];
 										
-										} else if ( sel[ key ].length > 3 ) {
+										} else if ( sel[ key ]._value.length > 2 ) {
 											if ( dir == "front" )
 												sel[ key ].splice( idx[ key ], 1 );
 											else
 												sel[ key ].pop();
-											
-											sel[ key ]._checkDep( sel[ key ] );
 										
-										} else { // sel[ key ].length === 3
-											sel[ key ] = sel[ key ][ dir == "front" ? ( idx[ key ] === 2 ? 1 : 2 ) : 1 ];
+										} else { // sel[ key ]._value.length === 2
+											sel[ key ] = sel[ key ]._value[ dir == "front" ? ( idx[ key ] === 1 ? 0 : 1 ) : 0 ];
 										}
 									
 									} else {
@@ -1233,25 +910,25 @@
 							fst_len, snd_len,
 							fst_isOpArray, snd_isOpArray;
 						
-						snd_isOpArray = snd && snd[ 0 ] === "+" && snd.length > 2;
-						snd_len = ( snd_isOpArray && snd.length-1 ) || 2;
+						snd_isOpArray = snd && snd._value && snd._value.op === "+" && snd._value.length > 1;
+						snd_len = ( snd_isOpArray && snd._value.length ) || 1;
 						snd_idx = 0;
 						
-						fst_isOpArray = fst && fst[ 0 ] === "+" && fst.length > 2;
-						fst_len = ( fst_isOpArray && fst.length ) || 2;
+						fst_isOpArray = fst && fst._value && fst._value.op === "+" && fst._value.length > 1;
+						fst_len = ( fst_isOpArray && fst._value.length ) || 1;
 						
 						SNDLOOP : while ( snd_idx < snd_len && snd_sel !== snd ) {
-							snd_sel = snd_isOpArray ? snd[ ++snd_idx ] : snd;
+							snd_sel = snd_isOpArray ? snd._value[ snd_idx++ ] : snd;
 							snd_lit = typeof snd_sel;
 							snd_num = snd_lit === "number";
 							snd_lit = snd_num || snd_lit === "string";
 							
 							//do not factor out, if we are dealing with two
 							//opArrays or one is opArray and the other a ref
-							if ( ( !fst_isOpArray && snd_sel !== fst ) || snd_num || ( !snd_isOpArray && snd.constructor === Array ) ) {
+							if ( ( !fst_isOpArray && snd_sel !== fst ) || snd_num || ( !snd_isOpArray && snd instanceof Expression ) ) {
 								fst_idx = fst_len;
-								while ( fst_idx > 1 && fst_sel !== fst ) {
-									fst_sel = fst_isOpArray ? fst[ --fst_idx ] : fst;
+								while ( fst_idx >= 0 && fst_sel !== fst ) {
+									fst_sel = fst_isOpArray ? fst._value[ --fst_idx ] : fst;
 									fst_lit = typeof fst_sel;
 									fst_lit = fst_lit === "number" || fst_lit === "string";
 									
@@ -1263,13 +940,13 @@
 										
 										if ( fst_isOpArray ) {
 											if ( fst_sel !== 0 ) {
-												fst[ fst_idx ] = fst_sel;
+												fst.splice( fst_idx, 1, fst_sel );
 											
 											} else {
-												if ( fst.length > 3 ) {
+												if ( fst._value.length > 2 ) {
 													fst.splice( fst_idx, 1 );
 												} else {
-													fst = fst_idx === 2 ? fst[ 1 ] : fst[ 2 ];
+													fst = fst_idx === 1 ? fst._value[ 0 ] : fst._value[ 1 ];
 													fst_isOpArray = false;
 												}
 											}
@@ -1291,11 +968,10 @@
 											
 											if ( sum === 0 ) {
 												if ( fst_isOpArray ) {
-													if ( fst.length > 3 ) {
+													if ( fst._value.length > 2 ) {
 														fst.splice( fst_idx, 1 );
-														fst._checkDep( fst_sel );
 													} else {
-														fst = fst_idx === 2 ? fst[ 1 ] : fst[ 2 ];
+														fst = fst_idx === 1 ? fst._value[ 0 ] : fst._value[ 1 ];
 														fst_isOpArray = false;
 													}
 												
@@ -1308,127 +984,93 @@
 											} else if ( res.front !== 1 && res.back !== 1 ) {
 												//shared front and back
 												//reuse existing arrays
-												if ( res.front._isValArray && res.front[ 0 ] === "*" ) {
+												if ( res.front instanceof Expression && res.front._value.op === "*" ) {
 													fst_sel = res.front;
 													
-													if ( sum._isValArray && sum[ 0 ] === "*" ) {
-														sum.shift();
+													if ( sum instanceof Expression && sum._value.op === "*" ) {
 														fst_sel.push.apply( sum );
-														fst_sel.addDep( sum._dep )
 													} else {
-														if ( sum._isValArray )
+														if ( sum instanceof Expression )
 															fst_sel.push( sum );
 														else
-															fst_sel.splice( 1, 0, sum );
-														
-														fst_sel.addDep( sum )
+															fst_sel.unshift( sum );
 													}
 													
-													if ( res.back._isValArray && res.back[ 0 ] === "*" ) {
-														res.back.shift();
+													if ( res.back instanceof Expression && res.back._value.op === "*" ) {
 														fst_sel.push.apply( res.back );
-														fst_sel.addDep( res.back._dep )
 													} else {
 														fst_sel.push( res.back );
-														fst_sel.addDep( res.back )
 													}
 												
-												} else if ( sum._isValArray && sum[ 0 ] === "*" ) {
+												} else if ( sum instanceof Expression && sum._value.op === "*" ) {
 													fst_sel = sum;
 													
-													fst_sel.splice( 1, 0, res.front );
-													fst_sel.addDep( res.front )
+													fst_sel.unshift( res.front );
 													
-													if ( res.back._isValArray && res.back[ 0 ] === "*" ) {
-														res.back.shift();
+													if ( res.back instanceof Expression && res.back._value.op === "*" ) {
 														fst_sel.push.apply( res.back );
-														fst_sel.addDep( res.back._dep )
 													} else {
 														fst_sel.push( res.back );
-														fst_sel.addDep( res.back )
 													}
 												
-												} else if ( res.back._isValArray && res.back[ 0 ] === "*" ) {
+												} else if ( res.back instanceof Expression && res.back._value.op === "*" ) {
 													fst_sel = res.back;
 													
-													fst_sel.splice( 1, 0, res.front, sum );
-													fst_sel.addDep( res.front, sum )
+													fst_sel.unshift( res.front, sum );
 												
 												} else {
-													fst_sel = makeExprArray(
-														[ "*", sum._isValArray ? res.front : sum, sum._isValArray ? sum : res.front, res.back ],
-														res.front._isExprArray ? res.front._dep : res.front,
-														sum._isExprArray 	  ? sum._dep : sum,
-														res.back._isExprArray  ? res.back._dep : res.back
-													);
+													fst_sel = Expression( "*", [ sum instanceof Expression ? res.front : sum, sum instanceof Expression ? sum : res.front, res.back ] );
 												}
 											
 											} else if ( res.front !== 1 ) {
 												//shared front only
 												//reuse existing arrays
-												if ( res.front._isValArray && res.front[ 0 ] === "*" ) {
+												if ( res.front instanceof Expression && res.front._value.op === "*" ) {
 													fst_sel = res.front;
 													
-													if ( sum._isValArray && sum[ 0 ] === "*" ) {
-														sum.shift();
+													if ( sum instanceof Expression && sum._value.op === "*" ) {
 														fst_sel.push.apply( sum );
-														fst_sel.addDep( sum._dep )
 													} else {
-														if ( sum._isValArray )
+														if ( sum instanceof Expression )
 															fst_sel.push( sum );
 														else
-															fst_sel.splice( 1, 0, sum );
-														
-														fst_sel.addDep( sum )
+															fst_sel.unshift( sum );
 													}
 												
-												} else if ( sum._isValArray && sum[ 0 ] === "*" ) {
+												} else if ( sum instanceof Expression && sum._value.op === "*" ) {
 													fst_sel = sum;
 													
-													fst_sel.splice( 1, 0, res.front );
-													fst_sel.addDep( res.front )
+													fst_sel.unshift( res.front );
 												
 												} else {
-													fst_sel = makeExprArray(
-														[ "*", sum._isValArray ? res.front : sum, sum._isValArray ? sum : res.front ],
-														res.front._isExprArray ? res.front._dep : res.front,
-														sum._isExprArray 	  ? sum._dep : sum
-													);
+													fst_sel = Expression( "*", [ sum instanceof Expression ? res.front : sum, sum instanceof Expression ? sum : res.front ] );
 												}
 											
 											} else if ( res.back !== 1 ) {
 												//shared back only
 												//reuse existing arrays
-												if ( sum._isValArray && sum[ 0 ] === "*" ) {
+												if ( sum instanceof Expression && sum._value.op === "*" ) {
 													fst_sel = sum;
 													
-													if ( res.back._isValArray && res.back[ 0 ] === "*" ) {
-														res.back.shift();
+													if ( res.back instanceof Expression && res.back._value.op === "*" ) {
 														fst_sel.push.apply( res.back );
-														fst_sel.addDep( res.back._dep )
 													} else {
 														fst_sel.push( res.back );
-														fst_sel.addDep( res.back )
 													}
 												
-												} else if ( res.back._isValArray && res.back[ 0 ] === "*" ) {
+												} else if ( res.back instanceof Expression && res.back._value.op === "*" ) {
 													fst_sel = res.back;
 													
-													fst_sel.splice( 1, 0, sum );
-													fst_sel.addDep( sum )
+													fst_sel.unshift( sum );
 												
 												} else {
-													fst_sel = makeExprArray(
-														[ "*", sum, res.back ],
-														sum._isExprArray 	 ? sum._dep : sum,
-														res.back._isExprArray ? res.back._dep : res.back
-													);
+													fst_sel = Expression( "*", [ sum, res.back ] );
 												}
 											}
 											
-											if ( fst_isOpArray )
-												fst[ fst_idx ] = fst_sel;
-											else
+											if ( fst_isOpArray ) {
+												fst.splice( fst_idx, 1, fst_sel );
+											} else
 												fst = fst_sel;
 											
 											continue SNDLOOP;
@@ -1440,17 +1082,12 @@
 							//fst does not share summand parts with snd_sel, so just append snd_sel
 							if ( fst_isOpArray ) {
 								fst.push( snd_sel );
-								fst.addDep( snd_sel._isExprArray ? snd_sel._dep : snd_sel );
 								fst_len += 1;
 							
 							} else if ( fst !== 0 ){
-								fst = makeExprArray(
-									[ "+", fst, snd_sel ],
-									snd_sel._isExprArray ? snd_sel._dep : snd_sel,
-									fst._isExprArray     ? fst._dep     : fst
-								);
+								fst = Expression( "+", [ fst, snd_sel ] );
 								fst_isOpArray = true;
-								fst_len = 3;
+								fst_len = 2;
 							
 							} else {
 								fst = snd_sel;
@@ -1483,13 +1120,10 @@
 						if ( lit === Infinity || lit === -Infinity )
 							return lit;
 						
-						return makeExprArray( swap ? [ "+", lit, ref ] : [ "+", ref, lit ], ref );
+						return Expression( "+", swap ? [ lit, ref ] : [ ref, lit ] );
 					},
 					ref : function( ref1, ref2 ) {
-						//if ( ref1 === ref2 )
-						//	return makeExprArray( [ "*", 2, ref1 ], ref1 );
-						
-						return makeExprArray( [ "+", ref1, ref2 ], ref1, ref2 );
+						return Expression( "+", [ ref1, ref2 ] );
 					},
 					arr : function( ref, arr, swap ) {
 						if ( typeof swap !== "boolean" )
@@ -1537,17 +1171,17 @@
 							base1, base2,
 							exp1, exp2;
 						
-						if ( fst && fst._isValArray && fst[ 0 ] === "^" && fst.length > 2 ) {
-							base1 = fst[ 1 ];
-							exp1  = fst.length > 3 ? ( fst.splice( 1, 1 ), fst ) : fst[ 2 ];
+						if ( fst && fst instanceof Expression && fst._value.op === "^" && fst._value.length > 1 ) {
+							base1 = fst._value[ 0 ];
+							exp1  = fst._value.length > 2 ? ( fst.shift(), fst ) : fst._value[ 1 ];
 						} else {
 							base1 = fst;
 							exp1  = 1;
 						}
 						
-						if ( snd && snd._isValArray && snd[ 0 ] === "^" && snd.length > 2 ) {
-							base2 = snd[ 1 ];
-							exp2  = snd.length > 3 ? ( snd.splice( 1, 1 ), snd ) : snd[ 2 ];
+						if ( snd && snd instanceof Expression && snd._value.op === "^" && snd._value.length > 1 ) {
+							base2 = snd._value[ 0 ];
+							exp2  = snd._value.length > 2 ? ( snd.shift(), snd ) : snd._value[ 1 ];
 						} else {
 							base2 = snd;
 							exp2  = 1;
@@ -1575,34 +1209,34 @@
 							fst_len, snd_len,
 							fst_isOpArray, snd_isOpArray;
 						
-						snd_isOpArray = snd && snd[ 0 ] === "*" && snd.length > 2;
-						snd_len = ( snd_isOpArray && snd.length-1 ) || 2;
+						snd_isOpArray = snd && snd._value && snd._value.op === "*" && snd._value.length > 1;
+						snd_len = ( snd_isOpArray && snd._value.length ) || 1;
 						snd_idx = 0;
 						
-						fst_isOpArray = fst && fst[ 0 ] === "*" && fst.length > 2;
-						fst_len = ( fst_isOpArray && fst.length ) || 2;
+						fst_isOpArray = fst && fst._value && fst._value.op === "*" && fst._value.length > 1;
+						fst_len = ( fst_isOpArray && fst._value.length ) || 1;
 						
 						while ( snd_idx < snd_len && snd_sel !== snd ) {
-							snd_sel = snd_isOpArray ? snd[ ++snd_idx ] : snd;
+							snd_sel = snd_isOpArray ? snd._value[ snd_idx++ ] : snd;
 							snd_num = typeof snd_sel === "number";
 							
 							if ( snd_num ) {
 								//checking first entry of fst for number is sufficient
-								fst_idx = 1;
-								fst_sel = fst_isOpArray ? fst[ fst_idx ] : fst;
+								fst_idx = 0;
+								fst_sel = fst_isOpArray ? fst._value[ fst_idx ] : fst;
 								
 								if ( typeof fst_sel === "number" ) {
 									fst_sel *= snd_sel;
 									
 									if ( fst_isOpArray ) {
 										if ( fst_sel !== 1 ) {
-											fst[ fst_idx ] = fst_sel;
+											fst.splice( fst_idx, 1, fst_sel );
 										
 										} else {
-											if ( fst.length > 3 ) {
+											if ( fst._value.length > 2 ) {
 												fst.splice( fst_idx, 1 );
 											} else {
-												fst = fst_idx === 2 ? fst[ 1 ] : fst[ 2 ];
+												fst = fst_idx === 1 ? fst._value[ 0 ] : fst._value[ 1 ];
 												fst_isOpArray = false;
 											}
 										}
@@ -1613,23 +1247,20 @@
 								
 								} else {
 									if ( fst_isOpArray ) {
-										fst.splice( 1, 0, snd_sel );
+										fst.unshift( snd_sel );
 										fst_len += 1;
 									
 									} else {
-										fst = makeExprArray(
-											[ "*", snd_sel, fst ],
-											fst._isExprArray     ? fst._dep     : fst
-										);
+										fst = Expression( "*", [ snd_sel, fst ] );
 										fst_isOpArray = true;
-										fst_len = 3;
+										fst_len = 2;
 									}
 								}
 								
 							} else {
 								//comparing factors with last entry of fst is sufficient
 								fst_idx = fst_len;
-								fst_sel = fst_isOpArray ? fst[ --fst_idx ] : fst;
+								fst_sel = fst_isOpArray ? fst._value[ --fst_idx ] : fst;
 								
 								res = factorOutPowers.call( this, fst_sel, snd_sel );
 								
@@ -1639,11 +1270,10 @@
 									
 									if ( pow === 1 ) {
 										if ( fst_isOpArray ) {
-											if ( fst.length > 3 ) {
+											if ( fst._value.length > 2 ) {
 												fst.splice( fst_idx, 1 );
-												fst._checkDep( fst_sel );
 											} else {
-												fst = fst_idx === 2 ? fst[ 1 ] : fst[ 2 ];
+												fst = fst_idx === 1 ? fst._value[ 0 ] : fst._value[ 1 ];
 												fst_isOpArray = false;
 											}
 										
@@ -1653,7 +1283,7 @@
 									
 									} else {
 										if ( fst_isOpArray )
-											fst[ fst_idx ] = pow;
+											fst.splice( fst_idx, 1, pow );
 										else
 											fst = pow;
 									}
@@ -1662,17 +1292,12 @@
 									//fst does not share summand parts with snd_sel, so just append snd_sel
 									if ( fst_isOpArray ) {
 										fst.splice( fst_len, 0, snd_sel );
-										fst.addDep( snd_sel._isExprArray ? snd_sel._dep : snd_sel );
 										fst_len += 1;
 									
 									} else if ( fst !== 1 ) {
-										fst = makeExprArray(
-											[ "*", fst, snd_sel ],
-											fst._isExprArray     ? fst._dep     : fst,
-											snd_sel._isExprArray ? snd_sel._dep : snd_sel
-										);
+										fst = Expression( "*", [ fst, snd_sel ] );
 										fst_isOpArray = true;
-										fst_len = 3;
+										fst_len = 2;
 									
 									} else {
 										fst = snd_sel;
@@ -1704,13 +1329,13 @@
 						if ( lit === 1 )
 							return ref;
 						
-						return makeExprArray( [ "*", lit, ref ], ref );
+						return Expression( "*", [ lit, ref ] );
 					},
 					ref : function( ref1, ref2 ) {
 						if ( ref1 === ref2 )
-							return makeExprArray( [ "^", ref1, 2 ], ref1 );
+							return Expression( "^", [ ref1, 2 ] );
 						
-						return makeExprArray( [ "*", ref1, ref2 ], ref1, ref2 );
+						return Expression( "*", [ ref1, ref2 ] );
 					},
 					arr : function( ref, arr, swap ) {
 						if ( typeof swap !== "boolean" )
@@ -1768,31 +1393,24 @@
 						if ( right === 1 )
 							return 0;
 						
-						if ( left && left._isValArray && left[ 0 ] === "%" ) {
-							if ( right && right._isValArray && right[ 0 ] === "%" ) {
-								right.splice( 0, 1 );
-								left.push.apply( left, right );
-								left.addDep( right._dep );
+						if ( left && left instanceof Expression && left._value.op === "%" ) {
+							if ( right && right instanceof Expression && right._value.op === "%" ) {
+								left.push.apply( left, right._value );
 								
 							} else {
 								left.push( right );
-								left.addDep( right );
 							}
 							
 							return left;
 						}
 						
-						if ( right && right._isValArray && right[ 0 ] === "%" ) {
-							right.splice( 1, 0, left );
-							right.addDep( left );
+						if ( right && right instanceof Expression && right._value.op === "%" ) {
+							right.unshift( left );
 							
 							return right;
 						}
 						
-						return makeExprArray( [ "%", left, right ],
-							left  && left._isExprArray  ? left._dep  : left,
-							right && right._isExprArray ? right._dep : right
-						);
+						return Expression( "%", [ left, right ] );
 					};
 				
 				each( [ "lit", "ref", "arr" ], function( idxL, typeL ) {
@@ -1825,26 +1443,21 @@
 						if ( base === 1 )
 							return 1;
 						
-						if ( exp && exp._isValArray && exp[ 0 ] === "^" ) {
-							exp.splice( 1, 0, base );
-							exp.addDep( base._isExprArray ? base._dep : base );
+						if ( exp && exp instanceof Expression && exp._value.op === "^" ) {
+							exp.unshift( base );
 							
 							return exp;
 						
-						} else if ( typeof exp === "number" && base && base._isValArray &&
-									base[ 0 ] === "^" && base.length === 3 &&
-									typeof base[ 2 ] === "number" ) {
-							base = makeExprArray( base.slice(), base._dep );
-							base[ 2 ] *= exp;
+						} else if ( typeof exp === "number" && base && base instanceof Expression &&
+									base._value.op === "^" && base._value.length === 2 &&
+									typeof base._value[ 1 ] === "number" ) {
+							base = Expression( "^", base._value.slice() );
+							base._value[ 1 ] *= exp;
 							
 							return base;
 						}
 						
-						return makeExprArray(
-							[ "^", base, exp ],
-							base._isExprArray ? base._dep : base,
-							exp._isExprArray  ? exp._dep  : exp
-						);
+						return Expression( "^", [ base, exp ] );
 					};
 				
 				each( [ "lit", "ref", "arr" ], function( idxB, typeB ) {
@@ -1867,14 +1480,14 @@
 				},
 				
 				ref : function( ref ) {
-					return makeExprArray( [ "!", ref ], ref );
+					return Expression( "!", [ ref ] );
 				},
 				
 				arr : function( arr ) {
-					if ( arr[ 0 ] === "!" && arr[ 1 ].constructor === Array && arr[ 1 ][ 0 ] === "!" )
-						return arr[ 1 ];
+					if ( arr._value.op === "!" && arr._value[ 0 ] instanceof Expression && arr._value[ 0 ]._value.op === "!" )
+						return arr._value[ 0 ];
 					else
-						return makeExprArray( [ "!", arr ], arr._dep );
+						return Expression( "!", [ arr ] );
 				}
 			} );
 			
@@ -1884,14 +1497,14 @@
 				},
 				
 				ref : function( ref ) {
-					return makeExprArray( [ "+", ref ], ref );
+					return Expression( "+", [ ref ] );
 				},
 				
 				arr : function( arr ) {
-					if ( arr && arr._isValArray && arr[ 0 ] === "+" && arr.length === 2 )
+					if ( arr && arr instanceof Expression && arr._value.op === "+" && arr._value.length === 1 )
 						return arr;
 					
-					return makeExprArray( [ "+", arr ], arr._dep );
+					return Expression( "+", [ arr ] );
 				}
 			} );
 			
@@ -1905,48 +1518,51 @@
 				},
 				
 				ref : function( ref ) {
-					return makeExprArray( [ "typeof", ref ], ref );
+					return Expression( "typeof", [ ref ] );
 				},
 				
 				arr : function( arr ) {
-					if ( arr && arr._isValArray && arr[ 0 ] === "typeof" )
+					if ( arr && arr instanceof Expression && arr._value.op === "typeof" )
 						return "string";
 					
-					return makeExprArray( [ "typeof", arr ], arr._dep );
+					return Expression( "typeof", [ arr ] );
 				}
 			} );
 			
 			operator( "delete", "delete", 90, null, function( v, interpreter ) {
-				if ( !v || ( !v._isVar && !v._isPath && v.id !== "(id)" && !v._propAccess ) )
+				var isExpr = v instanceof Expression && v._value,
+					isPropAccess = isExpr && v._value.op === ".",
+					isVar  = !isExpr && v instanceof Variable && v._value,
+					isPath = !isVar && v instanceof PropPath;
+				
+				if ( !v || ( !isVar && !isPath && !isExpr && v.id !== "(id)" ) )
 					error( "Bad lvalue: no variable or object property." );
 				
-				if ( v._propAccess || v._isPath ) {
-					if ( isEmptyObj( v._dep ) ) {
-						//literals only array
-						var ctxt, i, l;
-						
-						ctxt = v[ 1 ];
-						for ( i = 2, l = v.length-1; i<l; i++ )
-							ctxt = ctxt[ v[ i ] ];
-						
-						return delete ctxt[ v[ l ] ];
-					}
-					
+				if ( isPropAccess )
 					return !!PropPath( v, false, undefined, true );
-				}
+				else if ( isExpr )
+					return v.remove();
+				else if ( isPath )
+					return !!v.set( false, undefined, true );
 				
-				return interpreter.nameTable[ "delete" ]( v._key || v.value );
+				return interpreter.nameTable.remove( v._key || v.value );
 			} );
 			
 			operator( "~delete", "delete", 90, null, function( path ) {
-				if ( !path || ( !path._propAccess && !path._isPath ) )
+				var isPath = path instanceof PropPath,
+					isPropAccess = !isPath && path instanceof Expression && path._value.op === ".";
+				
+				if ( !path || ( !isPropAccess && !isPath ) )
 					error( "Bad lvalue: no object property." );
 				
-				return !!PropPath( path, true, undefined, true );
+				if ( isPropAccess )
+					return !!PropPath( path, true, undefined, true );
+				else
+					return !!path.set( true, undefined, true );
 			} );
 			
 			operator( "~", "prefix", 90, function ( expr ) {
-					this.first = undefined;
+					//this.first = undefined;
 					this.nudEval = operators[ this.id ].nudEval;
 					expr.o[ expr.p ] = this;
 					
@@ -1962,15 +1578,12 @@
 					};
 				},
 				function( v ) {
-					if ( !v || !v._isPath && !v._isCall )
+					if ( !v || !(v instanceof PropPath) && !(v instanceof FunctionCall) )
 						error( "Bad lvalue: no reactive object property or function call." );
 					
 					deregister = false;
 					
-					if ( v._isPath )
-						return PropPath.prototype.remove( v );
-					else
-						return FunctionCall.prototype.remove( v );
+					return v.remove();
 				}
 			);
 			
@@ -1990,7 +1603,7 @@
 			
 			operator( "{", "infix", 100, function( expr ) {
 					this.first = expr.o[ expr.p ];
-					this.second = undefined;
+					//this.second = undefined;
 					this.ledEval = operators[ "{" ].ledEval;
 					expr.o[ expr.p ] = this;
 					
@@ -2006,23 +1619,19 @@
 				function( v, ctxt ) {
 					var idx;
 					
-					if ( !v._isVar && !v._isExprArray && !v._isFunc )
-						error( "{ must be preceeded by a variable or expression!" );
+					if ( !(v instanceof Variable) && !(v instanceof Expression) && !v._isFunc )
+						error( "{ must be preceeded by a variable, expression of function!" );
 					
-					if ( ctxt && ctxt._isValArray && ctxt[ 0 ] === "," ) {
-						ctxt = ctxt.slice( 1 );
-						
-						idx = ctxt.length;
+					if ( ctxt && ctxt instanceof Expression && ctxt._value.op === "," ) {
+						idx = ctxt._value.length;
 						while( idx-- ) {
-							if ( ctxt[ idx ]._isExprArray )
+							if ( ctxt._value[ idx ] instanceof Expression )
 								error( "context data must be a literal or variable!" );
 						}
 						
 					} else if ( ctxt !== undefined ) {
-						if ( ctxt._isExprArray )
+						if ( ctxt instanceof Expression )
 							error( "context data must be a literal or variable!" );
-						
-						ctxt = [ ctxt ];
 					}
 					
 					if ( ctxt ) {
@@ -2036,55 +1645,88 @@
 				}
 			);
 			
-			var arrFunc = function( func, args ) {
-					if ( func.inverse ) {
-						if ( args && args._isValArray && args[ 0 ] === "(" && args[ 1 ] === func.inverse )
-							return args[ 2 ];
-						
-					} else if ( func.projection ) {
-						if ( args && args._isValArray && args[ 0 ] === "(" && args[ 1 ] === func )
-							return args;
-					}
-					
-					return makeExprArray( [ "(", func, args ], args._isExprArray ? args._dep : args );
-				};
-			
 			operator( "(", "call", 100, null, function( func, args ) {
-				var argsArr, call;
+				var call, funcIsLit, argsAreLits;
 				
-				//create arguments array to bind
-				if ( args && args._isValArray && args[ 0 ] === "," ) {
-					argsArr = args.slice( 1 );
-					delete argsArr._dep;
-					
-				} else {
-					argsArr = args !== undefined ? [ args ] : args;
-				}
+				//prepare function
+				if ( func instanceof Variable && func._isConst )
+					func = func._value.value;
+				
+				if ( typeof func === "function" )
+					funcIsLit = true;
+				else if ( !(func instanceof Reactive) )
+					error( "Invalid function expression in function call!" );
+				
+				//prepare arguments
+				if ( funcIsLit && !(args instanceof Reactive) )
+					return func( args );
 				
 				if ( deregister )
-					return FunctionCall.prototype._search( func, argsArr );
+					return FunctionCall.prototype._search( func, args );
 				
-				call = FunctionCall( func, argsArr, true );
-				call instanceof FunctionCall && call._call();
+				if ( args instanceof Expression && args._value.op === "," ) {
+					argIdx = args._value.length;
+					argsAreLits = true;
+					while ( argIdx-- ) {
+						if ( args._value[ argIdx ] instanceof Reactive ) {
+							argsAreLits = false;
+							break;
+						}
+					}
+					
+					//literal function and arguments
+					if ( funcIsLit && argsAreLits )
+						return func.apply( this, args._value );
+				}
+				
+				//function applied on its inverse function
+				if ( funcIsLit && args instanceof FunctionCall ) {
+					if ( args._value.func.inverse === func )
+						return args._value.args;
+					else if ( args._value.func.projection && args._value.func === func )
+						return args;
+				}
+				
+				call = FunctionCall( func, args, true );
+				call._call();
 				return call;
 			} );
 			
 			operator( ":(", "call", 100, null, function( func, args ) {
-				var argsArr;
+				var funcIsLit, argsAreLits;
 				
-				//create arguments array to bind
-				if ( args && args._isValArray && args[ 0 ] === "," ) {
-					argsArr = args.slice( 1 );
-					delete argsArr._dep;
-					
-				} else {
-					argsArr = args !== undefined ? [ args ] : args;
-				}
+				//prepare function
+				if ( func instanceof Variable && func._isConst )
+					func = func._value;
+				
+				if ( typeof func === "function" )
+					funcIsLit = true;
+				else if ( !(func instanceof Reactive) )
+					error( "Invalid function expression in function call!" );
+				
+				//prepare arguments
+				if ( funcIsLit && !(args instanceof Reactive) )
+					return;
 				
 				if ( deregister )
-					return FunctionCall.prototype._search( func, argsArr );
+					return FunctionCall.prototype._search( func, args );
 				
-				return FunctionCall( func, argsArr, true ) ? true : false;
+				if ( args instanceof Expression && args._value.op === "," ) {
+					argIdx = args._value.length;
+					argsAreLits = true;
+					while ( argIdx-- ) {
+						if ( args._value[ argIdx ] instanceof Reactive ) {
+							argsAreLits = false;
+							break;
+						}
+					}
+					
+					//literal function and arguments
+					if ( funcIsLit && argsAreLits )
+						return;
+				}
+				
+				return FunctionCall( func, args, true ) ? true : false;
 			} );
 			
 			var objPropEval = {
@@ -2093,30 +1735,31 @@
 						if ( prop.id === "(id)" )
 							prop = prop.value;
 						
-						var path = [ ".", obj, prop ];
+						var path = [ obj, prop ];
 						path = PropPath.prototype._search( path );
 						if ( path )
 							return path;
 						
 						if ( this.nextToken === "=" || this.nextToken === "~=" ||
-							 this.prevToken === "delete" || this.prevToken === "~delete" || this.prevToken === "~" ||
-							 this.nextToken === "(" || this.nextToken === ":(" || this.nextToken === "~(" )
-							return makeExprArray( [ ".", obj, prop ] );
+							 this.nextToken === "(" || this.nextToken === ":(" || this.nextToken === "~(" ||
+							 ( ( this.prevToken === "delete" || this.prevToken === "~delete" || this.prevToken === "~" ) &&
+							 ( this.nextToken !== "." && this.nextToken !== "[" ) ) )
+							return Expression( ".", [ obj, prop ] );
 						
 						return obj[ prop ];
 					},
 					ref : function( obj, prop ) {
-						var path = [ ".", obj, prop ];
+						var path = [ obj, prop ];
 						
-						return PropPath.prototype._search( path ) || makeExprArray( path, prop );
+						return PropPath.prototype._search( path ) || Expression( ".", path );
 					},
 					arr : function( obj, prop ) {
-						if ( prop[ 0 ] === "." )
-							prop = PropPath.prototype._search( prop ) || prop;
+						if ( prop._value.op === "." )
+							prop = PropPath.prototype._search( prop._value ) || prop;
 						
-						var path = [ ".", obj, prop ];
+						var path = [ obj, prop ];
 						
-						return PropPath.prototype._search( path ) || makeExprArray( [ ".", obj, prop ], prop._isExprArray ? prop._dep : prop );
+						return PropPath.prototype._search( path ) || Expression( ".", path );
 					}
 				},
 				ref : {
@@ -2124,22 +1767,22 @@
 						if ( prop.id === "(id)" )
 							prop = prop.value;
 						
-						var path = [ ".", obj, prop ];
+						var path = [ obj, prop ];
 						
-						return PropPath.prototype._search( path ) || makeExprArray( path, obj );
+						return PropPath.prototype._search( path ) || Expression( ".", path );
 					},
 					ref : function( obj, prop ) {
-						var path = [ ".", obj, prop ];
+						var path = [ obj, prop ];
 						
-						return PropPath.prototype._search( path ) || makeExprArray( path, obj, prop );
+						return PropPath.prototype._search( path ) || Expression( ".", path );
 					},
 					arr : function( obj, prop ) {
-						if ( prop[ 0 ] === "." )
-							prop = PropPath.prototype._search( prop ) || prop;
+						if ( prop._value.op === "." )
+							prop = PropPath.prototype._search( prop._value ) || prop;
 						
-						var path = [ ".", obj, prop ];
+						var path = [ obj, prop ];
 						
-						return PropPath.prototype._search( path ) || makeExprArray( path, obj, prop._isExprArray ? prop._dep : prop );
+						return PropPath.prototype._search( path ) || Expression( ".", path );
 					}
 				},
 				arr : {
@@ -2147,54 +1790,50 @@
 						if ( prop.id === "(id)" )
 							prop = prop.value;
 						
-						if ( obj[ 0 ] === "." ) {
-							obj = PropPath.prototype._search( obj ) || obj;
+						if ( obj._value.op === "." ) {
+							obj = PropPath.prototype._search( obj._value ) || obj;
 							
-							if ( obj._isExprArray )
+							if ( obj instanceof Expression )
 								return obj.push( prop ), obj;
 						}
 						
-						var path = [ ".", obj, prop ];
+						var path = [ obj, prop ];
 						
-						return PropPath.prototype._search( path ) || makeExprArray( path, obj._isExprArray ? obj._dep : obj );
+						return PropPath.prototype._search( path ) || Expression( ".", path );
 					},
 					ref : function( obj, prop ) {
-						if ( obj[ 0 ] === "." ) {
-							obj = PropPath.prototype._search( obj ) || obj;
+						if ( obj._value.op === "." ) {
+							obj = PropPath.prototype._search( obj._value ) || obj;
 							
-							if ( obj._isExprArray )
-								return obj.addDep( prop ).push( prop ), obj;
+							if ( obj instanceof Expression )
+								return obj.push( prop ), obj;
 						}
 						
-						var path = [ ".", obj, prop ];
+						var path = [ obj, prop ];
 						
-						return PropPath.prototype._search( path ) || makeExprArray( path, obj._isExprArray ? obj._dep : obj, prop );
+						return PropPath.prototype._search( path ) || Expression( ".", path );
 					},
 					arr : function( obj, prop ) {
-						if ( prop[ 0 ] === "." )
-							prop = PropPath.prototype._search( prop ) || prop;
+						if ( prop._value.op === "." )
+							prop = PropPath.prototype._search( prop._value ) || prop;
 						
-						if ( obj[ 0 ] === "." ) {
-							obj = PropPath.prototype._search( obj ) || obj;
+						if ( obj._value.op === "." ) {
+							obj = PropPath.prototype._search( obj._value ) || obj;
 							
-							if ( obj._isExprArray )
-								return obj.addDep( prop._isExprArray ? prop._dep : prop ).push( prop ), obj;
+							if ( obj instanceof Expression )
+								return obj.push( prop ), obj;
 						}
 						
-						var path = [ ".", obj, prop ];
+						var path = [ obj, prop ];
 						
-						return PropPath.prototype._search( path ) || makeExprArray(
-							path,
-							obj._isExprArray ? obj._dep : obj,
-							prop._isExprArray ? prop._dep : prop
-						);
+						return PropPath.prototype._search( path ) || Expression( ".", path );
 					}
 				}
 			};
 			
 			operator( ".", "infix", 110, function( expr ) {
 					this.first = expr.o[ expr.p ];
-					this.second = undefined;
+					//this.second = undefined;
 					this.dotPropAccess = true;
 					this.ledEval = operators[ "." ].ledEval;
 					expr.o[ expr.p ] = this;
@@ -2213,7 +1852,7 @@
 			
 			operator( "[", "infix", 110, function( expr ) {
 					this.first = expr.o[ expr.p ];
-					this.second = undefined;
+					//this.second = undefined;
 					this.ledEval = operators[ "[" ].ledEval;
 					expr.o[ expr.p ] = this;
 					
@@ -2230,7 +1869,7 @@
 			);
 			
 			operator( "(", "prefix", 120, function( expr ) {
-					this.first = undefined;
+					//this.first = undefined;
 					this.nudEval = operators[ "(" ].nudEval;
 					expr.o[ expr.p ] = this;
 					
@@ -2277,8 +1916,13 @@
 					var parent = expr.parent;
 					
 					//fix of assignTo for operator assignment with double assignment
-					if ( expr.o.assignment && !assignTo && expr.o.first )
+					if ( expr.o.assignment && !assignTo && expr.o.first ) {
+						if ( expr.o.first === expr.o.second && expr.o.first instanceof Expression )
+							//setting anonymous variable, which actually is an expression...
+							return parent.o[ parent.p ] = expr.o.first;
+						
 						assignTo = expr.o.first.id === "(id)" ? expr.o.first.value : expr.o.first._key;
+					}
 					
 					expr.nextToken = !token || !token.lbp ? undefined : token.id;
 					
@@ -2303,32 +1947,11 @@
 					
 					//use the value of a variable in case of assigning to the same variable
 					if ( assignTo ) {
-						if ( !expr.o.assignment && expr.o.first && expr.o.first._key === assignTo ) {
-							if ( expr.o.first._value._isExprArray ) {
-								var tmp = makeExprArray( expr.o.first._value.slice( 0 ), expr.o.first._value._dep );
-								
-								if ( "_context" in expr.o.first._value )
-									tmp.inCtxt( expr.o.first._context );
-								
-								expr.o.first = tmp;
-								
-							} else {
-								expr.o.first = expr.o.first._value;
-							}
-						}
+						if ( !expr.o.assignment && expr.o.first && expr.o.first._key === assignTo )
+							expr.o.first = expr.o.first._value.value;
 						
-						if ( expr.o.second && expr.o.second._key === assignTo ) {
-							if ( expr.o.second._value._isExprArray ) {
-								var tmp = makeExprArray( expr.o.second._value.slice( 0 ), expr.o.second._value._dep );
-								
-								if ( "_context" in expr.o.second._value )
-									tmp.inCtxt( expr.o.second._context );
-								
-								expr.o.second = tmp;
-								
-							} else
-								expr.o.second = expr.o.second._value;
-						}
+						if ( expr.o.second && expr.o.second._key === assignTo )
+							expr.o.second = expr.o.second._value.value;
 					}
 					
 					if ( typeof expr.o.first === "function" )
@@ -2387,9 +2010,7 @@
 						t,					//current token string
 						token,				//current token
 						expr,				//current expression working on
-						ret = {				//object to contain the top level expression, that is returned
-							value : undefined
-						},
+						ret = {},			//object to contain the top level expression, that is returned
 						newExpr = true,
 						assignOp = false;
 					
@@ -2406,7 +2027,10 @@
 						var s = arguments[ argIdx ];
 						
 						if ( newExpr && !expr.parent ) {
-							ret.value = undefined;
+							if ( ret.value instanceof Expression )
+								ret.value.unlink();
+							
+							delete ret.value;
 							newExpr = false;
 						}
 						
@@ -2429,10 +2053,10 @@
 									break;
 								
 								if ( newExpr && !expr.parent ) {
-									if ( ret.value._isExprArray )
-										ret.value.unlinkCalls();
+									if ( ret.value instanceof Expression )
+										ret.value.unlink();
 									
-									ret.value = undefined;
+									delete ret.value;
 									newExpr = false;
 								}
 								
@@ -2678,7 +2302,7 @@
 									}
 									
 									//put token into expression
-									if ( expr.o[ expr.p ] === undefined && ( !expr.end || expr.end !== token.id ) ) {
+									if ( !( expr.p in expr.o ) && expr.rbp !== Infinity && ( !expr.end || expr.end !== token.id ) ) {
 										//dont do this for ending tokens
 										expr = token.nud( expr );
 										
@@ -2757,9 +2381,6 @@
 								error( ret.value.value + " is not defined." );
 							
 							ret.value = this.nameTable.table[ ret.value.value ];
-						
-						} else if ( ret.value._isExprArray ) {
-							ret.value.unlinkCalls();
 						}
 					}
 					
@@ -2767,13 +2388,96 @@
 					return ret.value;
 				};
 			
+			var Reactive = function( proto ) {
+					var r = Object.create( Reactive.prototype );
+					
+					if ( proto )
+						r._proto  = proto;
+					
+					for ( var id in proto )
+						if ( proto.hasOwnProperty( id ) )
+							r[ id ] = proto[ id ];
+					
+					return r;
+				};
+			
+			var linkId = function( id, rmvList ) {
+					if ( !this._value.hasOwnProperty( id ) )
+						return;
+					
+					if ( !(this._value[ id ] instanceof Reactive) )
+						return;
+					
+					this._value[ id ]._partOf[ this._guid ] = this;
+					rmvList && delete rmvList[ this._value[ id ]._guid ];
+					
+					if ( this._value[ id ] instanceof Expression )
+						this._value[ id ].link( undefined, rmvList );
+				},
+				unlinkId = function( id, rmvList ) {
+					if ( !this._value.hasOwnProperty( id ) )
+						return;
+					
+					if ( !(this._value[ id ] instanceof Reactive) )
+						return;
+					
+					this._value[ id ]._partOf && delete this._value[ id ]._partOf[ this._guid ];
+					
+					if ( this._value[ id ] instanceof Expression )
+						this._value[ id ].unlink( undefined, rmvList );
+					else if ( this._value[ id ] instanceof PropPath &&
+							  isEmptyObj( this._value[ id ]._partOf ) &&
+							  !("value" in this._value[ id ]._value) )
+						rmvList ? (rmvList[ this._value[ id ]._guid ] = this._value[ id ]) : this._value[ id ].remove();
+					else if ( this._value[ id ] instanceof FunctionCall &&
+							  isEmptyObj( this._value[ id ]._partOf ) )
+						rmvList ? (rmvList[ this._value[ id ]._guid ] = this._value[ id ]) : this._value[ id ].remove();
+				};
+			
+			Reactive.prototype = {
+				_guid : 0,
+				_proto : null,
+				
+				_partOf : null,
+				_value  : null,
+				_evaled : null,
+				
+				link : function( id, rmvList ) {
+					if ( this instanceof Expression )
+						this.linked = true;
+					
+					if ( id )
+						return linkId.call( this, id, rmvList );
+					
+					for ( id in this._value )
+						linkId.call( this, id, rmvList );
+				},
+				unlink : function( id, rmvList ) {
+					if ( id )
+						return unlinkId.call( this, id, rmvList );
+					
+					if ( this instanceof Expression )
+						delete this.linked;
+					
+					for ( id in this._value )
+						unlinkId.call( this, id, rmvList );
+				},
+				remove : function() {
+					delete this._guid;
+					delete this._partOf;
+					delete this._evaled;
+					delete this._value;
+				}
+			};
+			
 			//Variable creation and properties
-			var Variable = function( key, val ) {
+			var Variable = function( key, val, isConst ) {
 					var v = this instanceof Variable ? this : Object.create( Variable.prototype );
 					
-					v._guid	  = Variable.prototype._guid++;
-					v._dep 	  = null;
+					v._guid	  = Reactive.prototype._guid++;
 					v._partOf = {};
+					v._evaled = {};
+					v._value  = {};
 					
 					v.set( val );
 					
@@ -2783,93 +2487,107 @@
 					
 					} else {
 						v._key = String( v._guid );
-						v._isNamed = false;
 					}
+					
+					if ( isConst )
+						v._isConst = true;
 					
 					return v;
 				};
 			
-			Variable.prototype = {
-				_guid   : 0,
-				
-				_value  : undefined,
-				_dep    : null,
-				_partOf : null,
-				
-				_isVar : true,
+			Variable.prototype = Reactive( {
+				_key	 : "unnamed",
+				_isNamed : false,
+				_isConst : false,
+				_inCtxt  : false,
 				
 				valueOf : function() {
 					try {
-						var idx, context;
+						var idx, context,
+							value  = this._value.value,
+							evaled = this._evaled;
 						
-						if ( !this._context && arguments.length ) {
-							if ( typeof this._value === "function" ) {
+						if ( !this._value.context && arguments.length ) {
+							if ( typeof value === "function" ) {
 								context = [];
 								idx = arguments.length;
 								while( idx-- )
 									context[ idx ] = arguments[ idx ].valueOf();
 								
-								return this._value.apply( null, context );
+								return value.apply( null, context );
 							
-							} else if ( this._value && this._value.valueOf )
-								return this._value.valueOf.apply( this._value, arguments );
+							} else if ( value && value.valueOf )
+								return value.valueOf.apply( value, arguments );
 							
 							else
-								return this._value;
+								return value;
 						}
 						
-						if ( !this.hasOwnProperty( "_evaled" ) ) {
-							if ( this._context ) {
-								if ( typeof this._value === "function" ) {
+						if ( !evaled.hasOwnProperty( "value" ) ) {
+							if ( this._value.context ) {
+								if ( this._value.context instanceof Expression && this._value.context._value.op === "," ) {
 									context = [];
-									idx = this._context.length;
+									idx = this._value.context._value.length;
 									while( idx-- )
-										context[ idx ] = this._context[ idx ].valueOf();
-									
-									this._evaled = this._value.apply( null, context );
+										context[ idx ] = this._value.context._value[ idx ].valueOf();
 								
-								} else if ( this._value && this._value.valueOf )
-									this._evaled = this._value.valueOf.apply( this._value, this._context );
+								} else {
+									context = [ this._value.context.valueOf() ];
+								}
 								
+								if ( typeof value === "function" )
+									evaled.value = value.apply( null, context );
+								else if ( value && value.valueOf )
+									evaled.value = value.valueOf.apply( value, context );
 								else
-									this._evaled = this._value;
+									evaled.value = value;
 							
-							} else if ( this._value && this._value.valueOf )
-								this._evaled = this._value.valueOf();
+							} else if ( value && value.valueOf )
+								evaled.value = value.valueOf();
 							
 							else
-								this._evaled = this._value;
+								evaled.value = value;
 						}
 						
-						return this._evaled;
+						return evaled.value;
 					
 					} catch( e ) {
 						error( "Variable.valueOf: " + e.message );
 					}
 				},
 				toString : function() {
-					try {
-						if ( !("_string" in this) ) {
-							this._string = this._isNamed ? this._key + " = " : "";
-						
-							if ( this._value && this._value.toString )
-								this._string += this._value.toString();
-							else if ( typeof this._value === "function" )
-								this._string += "function(){...}";
-							else
-								this._string += String( this._value );
-						}
-						
-						return this._string;
+					var value  = this._value.value,
+						evaled = this._evaled;
 					
+					try {
+						if ( evaled.hasOwnProperty( "string" ) )
+							return evaled.string;
+						
+						evaled.string = this._isNamed ? this._key + " = " : "";
+						
+						if ( this._inCtxt )
+							evaled.string += "( ";
+						
+						if ( typeof value === "function" )
+							evaled.string += "function(){...}";
+						else if ( value && value.toString )
+							evaled.string += value.toString();
+						else
+							evaled.string += String( value );
+						
+						if ( this._inCtxt )
+							evaled.string += " ){ " + String( this._value.context ) + " }";
+						
+						return evaled.string;
+						
 					} catch( e ) {
 						error( "Variable.toString: " + e.message );
 					}
 				},
 				
 				invalidate : function( from ) {
-					delete this._evaled;
-					delete this._string;
+					delete this._evaled.value;
+					delete this._evaled.string;
 					
 					for ( var id in this._partOf )
 						this._partOf[ id ].invalidate( this );
@@ -2878,342 +2596,225 @@
 				},
 				
 				set : function( val ) {
-					var id;
+					//remove context in advance
+					if ( "context" in this._value ) {
+						delete this._value.context;
+						this.unlink( "context" );
+					}
 					
+					//new value is current value
+					//adjust context, if at all
 					if ( val && this._value === val ) {
 						if ( val._isFunc && val._context ) {
-							this._context = val._context;
+							this._value.context = val._context;
+							this.link( "context" );
 							delete val._context;
-						} else {
-							delete this._context;
 						}
 						
 						return this;
 					}
 					
+					//delete links from value to this instance
+					var rmvList = {};
+					this.unlink( undefined, rmvList );
+					
 					//set new value
-					this._value = val;
+					this._value.value = val;
 					
-					//delete links from dependencies to this instance
-					this._unlinkDeps();
+					//link value to this instance
+					!dontTrack && this.link( undefined, rmvList );
 					
-					if ( val ) {
-						//set new dependency
-						if ( val._dep )
-							this._dep = val._dep;
-						else if ( val._isCall )
-							this._dep = val;
-						else
-							delete this._dep;
+					for ( var id in rmvList )
+						rmvList[ id ].remove();
+					
+					//context variable?
+					if ( val && val._isFunc ) {
+						delete val._isFunc;
 						
-						if ( val._isExprArray )
-							val._makeVar();
-						
-						//set context
-						delete this._context;
-						
-						if ( val._isFunc ) {
-							delete val._isFunc;
-							
-							if ( val._context ) {
-								this._context = val._context;
-								delete val._context;
-							}
+						if ( val._context ) {
+							this._value.context = val._context;
+							this.link( "context" );
+							delete val._context;
 						}
 					}
 					
-					//invalidate
 					this.invalidate();
-					
-					if ( !dontTrack )
-						//link dependencies to this instance
-						this._linkDeps();
 					
 					return this;
 				},
-				_linkDeps : function() {
-					//set partOf on dependencies' side
-					var id;
-					
-					if ( this._dep && this._dep._isCall ) {
-						this._dep._partOf[ this._guid ] = this;
-						this._dep.link();
-					
-					} else {
-						for ( id in this._dep ) {
-							this._dep[ id ]._partOf[ this._guid ] = this;
-							
-							if ( this._dep[ id ]._isCall )
-								this._dep[ id ].link();
-						}
-					}
-					
-					this._linkCtxtDeps && this._linkCtxtDeps();
-				},
-				_linkCtxtDeps : function( v ) {
-					//set partOf of context parts
-					var ctxt = this._context,
-						v = v || this,
-						idx;
-					
-					if ( ctxt ) {
-						idx = ctxt.length;
-						while ( idx-- ) {
-							if ( ctxt[ idx ]._isVar )
-								ctxt[ idx ]._partOf[ v._guid ] = v;
-						}
-					}
-					
-					if ( v !== this || !this._value || !this._value._isValArray )
-						return;
-					
-					idx = this._value.length;
-					while ( idx-- ) {
-						if ( this._value[ idx ]._isCtxtVar )
-							this._value[ idx ]._linkCtxtDeps();
-						else if ( this._value[ idx ]._isCtxtArray )
-							this._linkCtxtDeps.call( this._value[ idx ], this );
-					}
-				},
-				_unlinkDeps : function() {
-					//delete partOf on dependencies' side
-					var id;
-					
-					if ( this._dep && this._dep._isCall ) {
-						if ( this._dep._partOf )
-							delete this._dep._partOf[ this._guid ];
-						
-						this._dep.unlink();
-					
-					} else {
-						for ( id in this._dep ) {
-							if ( this._dep[ id ]._partOf )
-								delete this._dep[ id ]._partOf[ this._guid ];
-							
-							if ( this._dep[ id ]._isCall )
-								this._dep[ id ].unlink();
-						}
-					}
-					
-					this._unlinkCtxtDeps && this._unlinkCtxtDeps();
-				},
-				_unlinkCtxtDeps : function( v ) {
-					//delete partOf of context parts
-					var ctxt = this._context,
-						v = v || this,
-						idx;
-					
-					if ( ctxt ) {
-						idx = ctxt.length
-						while ( idx-- )
-							if ( ctxt[ idx ]._isVar )
-								delete ctxt[ idx ]._partOf[ v._guid ];
-					}
-					
-					if ( v !== this || !this._value || !this._value._isValArray )
-						return;
-					
-					idx = this._value.length;
-					while ( idx-- ) {
-						if ( this._value[ idx ]._isCtxtVar )
-							this._value[ idx ]._unlinkCtxtDeps();
-						else if ( this._value[ idx ]._isCtxtArray )
-							this._unlinkCtxtDeps.call( this._value[ idx ], this );
-					}
-				},
 				inCtxt : function( ctxt ) {
-					if ( this._context )
+					if ( this._value.context )
 						return this;
 					
 					var v = Object.create( this );
 					
-					v._guid = Variable.prototype._guid++;
-					v._context = ctxt;
-					v._isCtxtVar = true;
+					v._guid = Reactive.prototype._guid++;
+					v._value = Object.create( this._value );
+					v._value.context = ctxt;
+					v._evaled = {};
+					v._inCtxt = true;
 					
 					return v;
 				},
-				"delete" : function() {
-					var id;
+				remove : function() {
+					this.unlink();
+					delete this._key;
+					delete this._isNamed;
+					delete this._isConst;
 					
-					this._unlinkDeps();
-					
-					delete this._value;
-					
-					delete this._string;
-					delete this._evaled;
-					
-					delete this._guid
-					delete this._dep;
-					delete this._partOf;
+					Reactive.prototype.remove.call( this );
 					
 					return true;
 				}
+			} );
+			
+			//expressions
+			var Expression = function( op, array ) {
+				var v = this instanceof Expression ? this : Object.create( Expression.prototype );
+				
+				v._guid	  = Reactive.prototype._guid++;
+				v._partOf = {};
+				v._evaled = {};
+				v._value  = array;
+				v._value.op = op;
+				
+				return v;
 			};
 			
-			//function calls
-			var FunctionCall = function( func, args, evalArgs ) {
-					var funcIsLit, argsAreLits;
-					
-					//prepare function
-					if ( func._isVar && func._locked )
-						func = func._value;
-					
-					if ( typeof func === "function" )
-						funcIsLit = true;
-					
-					//prepare arguments
-					if ( args === undefined )
-						args = [];
-					else if ( args.constructor !== Array || args._isExprArray )
-						args = [ args ];
-					
-					argIdx = args.length;
-					argsAreLits = true;
-					while ( argIdx-- ) {
-						if ( args[ argIdx ]._isVar || args[ argIdx ]._isExprArray || args[ argIdx ]._isCall || args[ argIdx ]._isPath ) {
-							argsAreLits = false;
-							break;
-						}
-					}
-					
-					//function applied on its inverse function
-					if ( funcIsLit && args[ 0 ] && args[ 0 ]._func && args[ 0 ]._func.inverse === func )
-						return args[ 0 ]._args[ 0 ];
-					
-					//literal function and arguments
-					if ( funcIsLit && argsAreLits )
-						return func.apply( this, args );
-					
-					var c = this instanceof FunctionCall ? this : Object.create( FunctionCall.prototype );
-					
-					c._guid = "#f" + FunctionCall.prototype._guid++;
-					
-					c._func = func;
-					c._args = args;
-					c._argLits = [];
-					c._partOf = {};
-					c._evalArgs = !!evalArgs;
-					
-					//don't track changes of function or arguments,
-					//if tracking is explicitly turned of by dontTrack
-					if ( !dontTrack )
-						c.link();
-					
-					return c;
-				};
-			
-			FunctionCall.prototype = {
-				_guid : 0,
-				
-				_func : null,
-				_funcLit : null,
-				_ctxtLit : null,
-				_args : null,
-				_argLits : null,
-				
-				_partOf : null,
-				_evalArgs : false,
-				_isCall : true,
+			Expression.prototype = Reactive( {
+				_inCtxt : false,
+				_linked : false,
 				
 				valueOf : function() {
-					return "_evaled" in this ? this._evaled : this._call();
-				},
-				
-				_call : function( update ) {
-					var i, j, outOfDate;
-					
-					//check, if this._func depends on update
-					outOfDate = false;
-					if ( !this._funcLit ) {
-						outOfDate = true;
-					
-					} else if ( this._func._isExprArray ) {
-						for ( i in this._func._dep ) {
-							if ( this._func._dep[ i ] === update ) {
-								outOfDate = true;
-								break;
-							}
-						}
-					
-					} else if ( this._func._isVar || this._func._isCall || this._func._isPath ) {
-						if ( this._func === update )
-							outOfDate = true;
-					}
-					
-					//evaluate function to literal
-					if ( outOfDate ) {
-						if ( this._func && this._func._isExprArray ) {
-							if ( this._func._propAccess ) {
-								var j = 2,
-									m = this._func.length-1;
-								
-								this._ctxtLit = this._func[ 1 ].valueOf();
-								
-								while ( j<m )
-									this._ctxtLit = this._ctxtLit[ this._func[ j++ ].valueOf() ];
-								
-								this._funcLit = this._ctxtLit[ this._func[ j ].valueOf() ];
-								
-							} else {
-								this._funcLit = this._func.valueOf();
-							}
-						
-						} else if ( this._func && ( this._func._isVar || this._func._isCall || this._func._isPath ) ) {
-							this._funcLit = this._func.valueOf();
-						
-						} else {
-							this._funcLit = this._func;
-						}
-					}
-					
-					if ( !this._evalArgs ) {
-						try {
-							return this._funcLit.apply( this._ctxtLit || this, this._args );
-						} catch( e ) {
-							error( "A reactive function call causes problems: " + e.message );
-						}
-					}
-					
-					j = this._args.length;
-					while ( j-- ) {
-						//check, if this._args[ i ] depends on update
-						outOfDate = false;
-						if ( !( j in this._argLits ) ) {
-							outOfDate = true;
-						
-						} else if ( this._args[ j ]._isExprArray ) {
-							for ( i in this._args[ j ]._dep ) {
-								if ( this._args[ j ]._dep[ i ] === update ) {
-									outOfDate = true;
-									break;
-								}
-							}
-						
-						} else if ( this._args[ j ]._isVar || this._args[ j ]._isCall || this._args[ j ]._isPath ) {
-							if ( this._args[ j ] === update )
-								outOfDate = true;
-						
-						}
-						
-						//and evaluate arguments to literals
-						if ( outOfDate ) {
-							if ( this._args[ j ]._isExprArray || this._args[ j ]._isVar || this._args[ j ]._isCall || this._args[ j ]._isPath )
-								this._argLits[ j ] = this._args[ j ].valueOf();
-							else
-								this._argLits[ j ] = this._args[ j ];
-						}
-					}
-					
 					try {
-						return this._evaled = this._funcLit.apply( this._ctxtLit || this, this._argLits );
+						var value = this._value,
+							op = value.op,
+							idx,
+							ret,
+							cur,
+							context;
+						
+						context = Array.prototype.slice.apply( value.context || arguments );
+						idx = context.length;
+						while( idx-- )
+							context[ idx ] = context[ idx ].valueOf();
+						
+						idx = value.length;
+						if ( idx === 1 ) {
+							//unary
+							if ( value[ 0 ] instanceof Reactive )
+								cur = value[ 0 ].valueOf.apply( value[ 0 ], context );
+							else if ( context.length && typeof value[ 0 ] === "function" )
+								cur = value[ 0 ].apply( value[ 0 ], context );
+							else
+								cur = value[ 0 ];
+							
+							return operators[ op ].nudEval.call( this, cur, ret );
+						}
+						
+						//binary with two or more operands
+						while( idx-- ) {
+							if ( value[ idx ] instanceof Reactive )
+								cur = value[ idx ].valueOf.apply( value[ idx ], context );
+							else if ( context.length && typeof value[ idx ] === "function" )
+								cur = value[ idx ].apply( value[ idx ], context );
+							else
+								cur = value[ idx ];
+							
+							ret = ( ret === undefined  ) ? cur : operators[ op ].ledEval.call( this, cur, ret );
+						}
+						
+						return ret;
+					
 					} catch( e ) {
-						error( "A reactive function call causes problems: " + e.message );
+						error( "Expression.valueOf: " + e.message );
+					}
+				},
+				toString : function() {
+					try {
+						if ( this._evaled.hasOwnProperty( "string" ) )
+							return this._evaled.string;
+						
+						var str = "",
+							value = this._value;
+							op = value.op;
+						
+						for ( var idx = 0, len = value.length; idx < len; idx++ ) {
+							if ( !value[ idx ] ) {
+								str += value[ idx ];
+							
+							} else if ( value[ idx ] instanceof Expression ) {
+								//replace + with - in case of negative number and summation
+								if ( op === "+" && value[ idx ]._value.op === "*" && value[ idx ]._value[ 0 ] < 0 ) {
+									str = str.slice( 0, -op.length );
+								}
+								
+								if ( ( op === "*" && value[ idx ]._value.op === "+" ) || op === "^" )
+									str += "(";
+								
+								str += value[ idx ].toString();
+								
+								if ( ( op === "*" && value[ idx ]._value.op === "+" ) || op === "^" )
+									str += ")";
+							
+							} else {
+								if ( op === "^" && idx > 1 && len > 2 )
+									str = "(" + str;
+								
+								if ( idx === 0 && op === "*" && value[ idx ] === -1 ) {
+									str += "-";
+									continue;
+								}
+								
+								if ( value[ idx ] instanceof Variable ) {
+									if ( value[ idx ]._isNamed )
+										str += value[ idx ]._key;
+									else
+										str += "{" + value[ idx ].toString() + "}";
+								
+								} else {
+									if ( typeof value[ idx ] === "number" && op === "+" && value[ idx ] < 0 ) {
+										str = str.slice( 0, -op.length );
+										str += "-" + Math.abs( value[ idx ] );
+									} else {
+										str += value[ idx ];
+									}
+								}
+								
+								if ( op === "^" && idx < len-1 && len > 2 )
+									str += ")";
+							}
+							
+							if ( idx > 0 ) {
+								if ( op === "(" )
+									str += " ) ";
+								else if ( op === "[" )
+									str += " ] ";
+								else if ( op === "{" )
+									str += " } ";
+							}
+							
+							if ( idx < len-1 ) {
+								if ( op !== "." )
+									str += " ";
+								
+								str += op;
+								
+								if ( op !== "." )
+									str += " ";
+							}
+						}
+						
+						return this._evaled.string = str;
+					
+					} catch( e ) {
+						error( "Expression.toString:" + e.message );
 					}
 				},
 				
 				invalidate : function( from ) {
-					this._call( from );
+					delete this._evaled.value;
+					delete this._evaled.string;
 					
 					for ( var id in this._partOf )
 						this._partOf[ id ].invalidate( this );
@@ -3221,298 +2822,423 @@
 					return this;
 				},
 				
-				link : function() {
-					var setPartOf = function( v ) {
-						v._partOf[ this._guid ] = this;
-					};
+				push : function() {
+					var l = this._value.length,
+						newL = Array.prototype.push.apply( this._value, arguments );
 					
-					//set partOf on functions side
-					doWithReactive.call( this, this._func, setPartOf );
+					this.linked && this.linkEntries( l, newL-1 );
+					this.invalidate();
 					
-					//set partOf on arguments' side
-					var i = this._args.length;
-					while ( i-- )
-						doWithReactive.call( this, this._args[ i ], setPartOf );
+					return newL;
+				},
+				pop : function() {
+					this.linked && this.unlinkEntries( this._value.length-1 );
+					this.invalidate();
+					
+					return Array.prototype.pop.apply( this._value, arguments );
+				},
+				shift : function() {
+					this.linked && this.unlinkEntries( 0 );
+					this.invalidate();
+					
+					return Array.prototype.shift.apply( this._value, arguments );
+				},
+				unshift : function() {
+					var l = Array.prototype.unshift.apply( this._value, arguments );
+					
+					this.linked && this.linkEntries( 0, arguments.length-1 );
+					this.invalidate();
+					
+					return l;
+				},
+				splice : function( idx, del ) {
+					this.linked && this.unlinkEntries( idx, idx+del );
+					
+					var entries = Array.prototype.splice.apply( this._value, arguments );
+					
+					if ( arguments.length > 2 )
+						this.linked && this.linkEntries( idx, idx+arguments.length-3 );
+					
+					this.invalidate();
+					
+					return entries;
+				},
+				linkEntries : function( from, i ) {
+					if ( arguments.length === 1 )
+						i = from;
+					
+					while ( i >= from )
+						this.link( i-- );
+				},
+				unlinkEntries : function( from, i ) {
+					if ( arguments.length === 1 )
+						i = from;
+					
+					while ( i >= from )
+						this.unlink( i-- );
 				},
 				
-				unlink : function() {
-					var rmvPartOf = function( v ) {
-							delete v._partOf[ this._guid ];
-						},
-						rmvPartOfExpr = function( v ) {
-							delete v._partOf[ this._guid ];
-							
-							if ( v._isCall )
-								v.unlink();
-						};
+				inCtxt : function( ctxt ) {
+					if ( this._value.context )
+						return this;
 					
-					//remove partOf on functions side
-					if ( this._func && this._func._isCall )
-						this._func.unlink();
-					else
-						doWithReactive.call( this, this._func, rmvPartOf, rmvPartOfExpr );
+					var v = Object.create( this );
 					
-					//remove partOf on arguments' side
-					if ( !this._args )
-						return;
+					v._guid = Reactive.prototype._guid++;
+					v._value = Object.create( this._value );
+					v._value.context = ctxt;
+					v._inCtxt = true;
 					
-					var i = this._args.length;
-					while ( i-- ) {
-						if ( this._args[ i ]._func && this._args[ i ]._isCall )
-							this._args[ i ].unlink();
-						else
-							doWithReactive.call( this, this._args[ i ], rmvPartOf, rmvPartOfExpr );
+					return v;
+				},
+				remove : function() {
+					this.unlink();
+					delete this._inCtxt;
+					
+					Reactive.prototype.remove.call( this );
+				}
+			} );
+			
+			//function calls
+			var FunctionCall = function( func, args, evalArgs ) {
+					var idx, c;
+					
+					//look if function call has already been registered
+					if ( c = FunctionCall.prototype._search( func, args ) ) {
+						c._calls += 1;
+						return c;
 					}
-				},
-				
-				_search : function( func, args ) {
-					var call = undefined;
 					
-					//find handler to FunctionCall instance
-					var checkCall = function( v ) {
-						for ( var id in v._partOf ) {
-							if ( id.charAt( 0 ) !== "#" || id.charAt( 1 ) !== "f" )
-								continue;
-							
-							if ( equiv( func, v._partOf[ id ]._func ) &&
-								 ( ( args === undefined && v._partOf[ id ]._args.length === 0 ) ||
-								 equiv( args, v._partOf[ id ]._args ) ) ) {
-								call = v._partOf[ id ];
-								return false;
+					//unknown call
+					c = this instanceof FunctionCall ? this : Object.create( FunctionCall.prototype );
+					
+					c._guid = Reactive.prototype._guid++;
+					!dontTrack && ( FunctionCall.prototype._calls[ c._guid ] = c );
+					
+					c._partOf = {};
+					
+					//manage object property paths
+					if ( func instanceof Expression && func._value.op === "." )
+						func = PropPath.prototype._search( func._value ) || PropPath( func );
+					
+					if ( args instanceof Expression ) {
+						if ( args._value.op === "." ) {
+							args = PropPath.prototype._search( args._value ) || PropPath( args );
+						
+						} else if ( args._value.op === "," ) {
+							idx = args._value.length;
+							while ( idx-- ) {
+								if ( args._value[ idx ] instanceof Expression && args._value[ idx ]._value.op === "." )
+									args._value[ idx ] = PropPath.prototype._search( args._value[ idx ]._value ) || PropPath( args._value[ idx ] );
 							}
 						}
-						
-						return true;
+					}
+					
+					c._value  = {
+						func : func,
+						args : args
 					};
+					c._evaled = {};
 					
-					var callFound = !doWithReactive( func, checkCall );
+					c._evalArgs = !!evalArgs;
+					c._calls = 1;
 					
-					if ( callFound || args === undefined )
-						return call;
+					//don't track changes of function or arguments,
+					//if tracking is explicitly turned of by dontTrack
+					!dontTrack && c.link();
 					
-					var argIdx = args.length;
-					while ( argIdx-- )
-						if ( callFound = !doWithReactive( args[ argIdx ], checkCall ) )
-							break;
+					return c;
+				};
+			
+			FunctionCall.prototype = Reactive( {
+				_evalArgs : false,
+				_calls    : {},
+				
+				_search : function( func, args ) {
+					for ( var id in FunctionCall.prototype._calls )
+						if ( equiv( func, FunctionCall.prototype._calls[ id ]._value.func ) &&
+							 equiv( args, FunctionCall.prototype._calls[ id ]._value.args ) )
+							return FunctionCall.prototype._calls[ id ];
 					
-					return call;
+					return undefined;
 				},
 				
-				remove : function( call ) {
-					call.unlink();
+				valueOf : function() {
+					return "value" in this._evaled ? this._evaled.value : this._call();
+				},
+				toString : function() {
+					if ( "string" in this._evaled )
+						return this._evaled.string;
 					
-					delete call._guid;
-					delete call._func;
-					delete call._funcLit;
-					delete call._ctxtLit;
-					delete call._args;
-					delete call._argLits;
-					delete call._partOf;
+					return this._evaled.string =
+						typeof this._value.func === "function" ?
+							"function(){...}" :
+							String( this._value.func ) + 
+						"( " + String( this._value.args ) + " )";
+				},
+				
+				invalidate : function( from ) {
+					var evaled = this._evaled,
+						value  = this._value,
+						func   = this._value.func,
+						args   = this._value.args;
+					
+					//check, if func depends on from
+					if ( !evaled.func || func === from ) {
+						if ( func instanceof Expression && func._value.op === "." ) {
+							if ( func.length === 2 ) {
+								evaled.ctxt = func._value[ 0 ].valueOf();
+								evaled.func = evaled.ctxt[ func._value[ 1 ].valueOf() ];
+							} else {
+								debugger;
+								var prop = func._value.pop();
+								evaled.ctxt = func.valueOf();
+								evaled.func._value = evaled.ctxt[ prop.valueOf() ];
+								func._value.push( prop );
+							}
+							
+						} else if ( func instanceof PropPath ) {
+							evaled.ctxt = func._evaled.ctxt;
+							evaled.func = func.valueOf();
+						
+						} else {						
+							evaled.func = func.valueOf();
+							evaled.ctxt = null;
+						}
+					}
+					
+					if ( this._evalArgs ) {
+						//check, if args depends on from
+						if ( !evaled.args || args === from ) {
+							if ( args instanceof Expression && args._value.op === "," ) {
+								evaled.args = Array.prototype.slice.call( args._value );
+								
+								var i = evaled.args.length;
+								while ( i-- )
+									evaled.args[ i ] = evaled.args[ i ] && evaled.args[ i ].valueOf();
+							
+							} else {
+								evaled.args = args && args.valueOf();
+							}
+						}
+					} else {
+						evaled.args = args;
+					}
+					
+					this._call();
+					
+					for ( var id in this._partOf )
+						this._partOf[ id ].invalidate( this );
+					
+					return this;
+				},
+				
+				_call : function() {
+					var evaled = this._evaled,
+						value  = this._value;
+					
+					try {
+						if ( !evaled.func ) {
+							this.invalidate();
+							return evaled.value;
+						}
+						
+						var i = this._calls;
+						if ( value.args instanceof Expression && value.args._value.op === "," )
+							while ( i-- ) 
+								evaled.value = evaled.func.apply( evaled.ctxt || window, evaled.args );
+						else
+							while ( i-- ) 
+								evaled.value = evaled.func.call( evaled.ctxt || window, evaled.args );
+						
+						return evaled.value;
+					
+					} catch( e ) {
+						error( "A reactive function call causes problems: " + e.message );
+					}
+				},
+				remove : function() {
+					if ( this._calls-1 < countProps( this._partOf, true ) ) {
+						for ( var id in this._partOf )
+							error( "Cannot deregister function call. It is still used in " + String( this._partOf[ id ] ) + "!" );
+					}
+					
+					if ( this._calls -= 1 )
+						return true;
+					
+					this.unlink();
+					delete FunctionCall.prototype._calls[ this._guid ];
+					
+					Reactive.prototype.remove.call( this );
 					
 					return true;
 				}
-			};
+			} );
 			
 			var PropPath = function( path, rev, val, del ) {
-				var p = path;
-				if ( !path._isPath ) {
-					p = this instanceof PropPath ? this : Object.create( PropPath.prototype );
-					
-					p._guid = "#p" + PropPath.prototype._guid++;
-					PropPath.prototype._paths[ p._guid ] = p;
-					
-					p._partOf = {};
-					p._path = path;
-					p.linkPath();
-					
-					var i, l;
-					p._ctxt = path[ 1 ].valueOf();
-					for ( i = 2, l = path.length-1; i<l; i++ )
-						p._ctxt = p._ctxt[ path[ i ].valueOf() ];
-					
-					p._prop = path[ l ].valueOf();
-				}
+				var p = this instanceof PropPath ? this : Object.create( PropPath.prototype );
 				
-				p.unlinkVal();
-				p._val = val;
-				p.linkVal();
+				p._guid = Reactive.prototype._guid++;
+				!dontTrack && ( PropPath.prototype._paths[ p._guid ] = p );
 				
-				p._valEvaled = val && val.valueOf();
-				p._del = del;
+				var i, l = path._value.length-1;
+				p._partOf = {};
+				p._value  = {
+					path : path
+				};
 				
-				if ( rev && !p._rev ) {
-					p._backupVal = p._ctxt[ p._prop ];
-					p._backupDel = p._prop in p._ctxt ? false : true;
-				}
+				!dontTrack && p.link( "path" );
 				
-				p._rev = rev;
+				p._evaled = {
+					ctxt : path._value[ 0 ].valueOf(),
+					prop : path._value[ l ].valueOf()
+				};
 				
-				//set new object property value
-				if ( p._del )
-					delete p._ctxt[ p._prop ];
-				else
-					p._ctxt[ p._prop ] = p._valEvaled;
+				for ( i = 2; i<l; i++ )
+					p._evaled.ctxt = p._evaled.ctxt[ path._value[ i ].valueOf() ];
 				
-				for ( var id in p._partOf )
-					p._partOf[ id ].invalidate( p );
+				if ( arguments.length > 1 )
+					p.set( rev, val, del );
 				
 				return p;
 			};
 			
-			PropPath.prototype = {
-				_guid : 0,
-				
-				_path : null,
-				_ctxt  : null,
-				_prop : null,
-				_val  : null,
-				_valEvaled : null,
-				_del  : null,
-				_rev  : null,
-				
-				_backupVal : null,
-				_backupDel : null,
-				
-				_isPath : true,
-				_partOf : null,
-				
+			PropPath.prototype = Reactive( {
 				_paths : {},
+				
 				_search : function( path ) {
 					for ( var id in PropPath.prototype._paths )
-						if ( equiv( path, PropPath.prototype._paths[ id ]._path ) )
+						if ( equiv( path, PropPath.prototype._paths[ id ]._value.path._value ) )
 							return PropPath.prototype._paths[ id ];
 					
 					return undefined;
 				},
 				
 				valueOf : function() {
-					return this._ctxt[ this._prop ];
+					return this._evaled.ctxt[ this._evaled.prop ];
 				},
-				_updatePath : function() {
-					//revert value of old path, if marked so
-					if ( this._rev ) {
-						if ( this._backupDel )
-							delete this._ctxt[ this._prop ];
-						else
-							this._ctxt[ this._prop ] = this._backupVal;
-					}
-					
-					//get new obj and prop
-					var i, l;
-					this._ctxt = this._path[ 1 ].valueOf();
-					
-					if ( typeof this._ctxt !== "object" )
-						error( "Invalid property path: " + String( this._path ) + "!" );
-					
-					for ( i = 2, l = this._path.length-1; i<l; i++ ) {
-						this._ctxt = this._ctxt[ this._path[ i ].valueOf() ];
-						
-						if ( typeof this._ctxt !== "object" )
-							error( "Invalid property path " + String( this._path ) + "!" );
-					}
-					
-					this._prop = this._path[ l ].valueOf();
-					
-					//get new backup values
-					this._backupVal = this._ctxt[ this._prop ];
-					this._backupDel = this._prop in this._ctxt ? false : true;
-					
-					//set object property value
-					if ( this._del )
-						delete this._ctxt[ this._prop ];
-					else
-						this._ctxt[ this._prop ] = this._valEvaled;
+				toString : function() {
+				
 				},
-				_updateValue : function() {
-					this._valEvaled = this._val.valueOf();
-					
-					//set new object property value
-					if ( this._del )
-						delete this._ctxt[ this._prop ];
-					else
-						this._ctxt[ this._prop ] = this._valEvaled;
-				},
-				linkVal : function() {
-					var setPartOf = function( v ) {
-						v._partOf[ this._guid ] = this;
-					};
-					
-					doWithReactive.call( this, this._val, setPartOf );
-				},
-				linkPath : function() {
-					var setPartOf = function( v ) {
-						v._partOf[ this._guid ] = this;
-					};
-					
-					doWithReactive.call( this, this._path, setPartOf );
-				},
-				unlinkVal : function() {
-					var rmvPartOf = function( v ) {
-							delete v._partOf[ this._guid ];
-							
-							if ( v._isCall )
-								v.unlink();
-						};
-					
-					//remove partOf on functions side
-					doWithReactive.call( this, this._val, rmvPartOf );
-				},
-				unlinkPath : function() {
-					var rmvPartOf = function( v ) {
-							delete v._partOf[ this._guid ];
-							
-							if ( v._isCall )
-								v.unlink();
-						};
-					
-					//remove partOf on functions side
-					doWithReactive.call( this, this._path, rmvPartOf );
-				},
-				remove : function( path ) {
-					//revert value of old path, if marked so
-					if ( path._rev ) {
-						if ( path._backupDel )
-							delete path._ctxt[ path._prop ];
-						else
-							path._ctxt[ path._prop ] = path._backupVal;
-					}
-					
-					path.unlinkVal();
-					path.unlinkPath();
-					
-					delete PropPath.prototype._paths[ path._guid ];
-					
-					delete path._guid;
-					delete path._path;
-					delete path._ctxt;
-					delete path._prop;
-					delete path._val;
-					delete path._del;
-					delete path._rev;
-					delete path._backupVal;
-					delete path._backupDel;
-					
-					return true;
-				},
+				
 				invalidate : function( from ) {
 					var id, pathUpdate = false;
-					for ( id in this._path._dep )
-						if ( from === this._path._dep[ id ] ) {
-							pathUpdate = true;
-							break;
-						}
 					
-					if ( pathUpdate )
-						this._updatePath();
-					else
-						this._updateValue();
+					if ( from !== undefined ) {
+						if ( from === this._value.path )
+							this._updatePath();
+						else
+							this._updateValue();
+					}
 					
 					for ( id in this._partOf )
 						this._partOf[ id ].invalidate( this );
 					
 					return this;
+				},
+				
+				set : function( rev, val, del ) {
+					var evaled = this._evaled,
+						value  = this._value;
+					
+					this.unlink( "value" );
+					
+					value.value = val;
+					
+					!dontTrack && this.link( "value" );
+					
+					evaled.value = val && val.valueOf();
+					value.del = del;
+					
+					if ( rev && !value.rev ) {
+						value.backupVal = evaled.ctxt[ evaled.prop ];
+						value.backupDel = evaled.prop in evaled.ctxt ? false : true;
+					}
+					
+					value.rev = rev;
+					
+					//set new object property value
+					if ( value.del )
+						delete evaled.ctxt[ evaled.prop ];
+					else
+						evaled.ctxt[ evaled.prop ] = evaled.value;
+					
+					this.invalidate();
+					
+					return this;
+				},
+				_updatePath : function() {
+					var evaled = this._evaled,
+						value  = this._value,
+						path   = this._value.path._value;
+					
+					//revert value of old path, if marked so
+					if ( value.rev ) {
+						if ( value.backupDel )
+							delete evaled.ctxt[ evaled.prop ];
+						else
+							evaled.ctxt[ evaled.prop ] = value.backupVal;
+					}
+					
+					//get new obj and prop
+					var i, l = path.length-1;
+					evaled.ctxt = path[ 0 ].valueOf();
+					evaled.prop = path[ l ].valueOf();
+					
+					if ( typeof evaled.ctxt !== "object" )
+						error( "Invalid property path: " + String( value.path ) + "!" );
+					
+					for ( i = 2; i<l; i++ ) {
+						evaled.ctxt = evaled.ctxt[ path[ i ].valueOf() ];
+						
+						if ( typeof evaled.ctxt !== "object" )
+							error( "Invalid property path " + String( value.path ) + "!" );
+					}
+					
+					//get new backup values
+					value.backupVal = evaled.ctxt[ evaled.prop ];
+					value.backupDel = evaled.prop in evaled.ctxt ? false : true;
+					
+					//set object property value
+					if ( "value" in value ) {
+						if ( value.del )
+							delete evaled.ctxt[ evaled.prop ];
+						else
+							evaled.ctxt[ evaled.prop ] = evaled.value;
+					}
+				},
+				_updateValue : function() {
+					var evaled = this._evaled,
+						value  = this._value;
+					
+					evaled.value = value.value.valueOf();
+					
+					//set new object property value
+					if ( value.del )
+						delete evaled.ctxt[ evaled.prop ];
+					else
+						evaled.ctxt[ evaled.prop ] = evaled.value;
+				},
+				remove : function() {
+					var evaled = this._evaled,
+						value  = this._value;
+					
+					//revert value of old path, if marked so
+					if ( value.rev ) {
+						if ( value.backupDel )
+							delete evaled.ctxt[ evaled.prop ];
+						else
+							evaled.ctxt[ evaled.prop ] = value.backupVal;
+					}
+					
+					this.unlink();
+					delete PropPath.prototype._paths[ this._guid ];
+					
+					Reactive.prototype.remove.call( this );
+					
+					return true;
 				}
-			};
+			} );
 			
 			//name table of interpreter
 			var NameTable = function( base ) {
@@ -3538,8 +3264,8 @@
 					for ( key in this.table ) {
 						v = this.table[ key ];
 						
-						if ( this.table.hasOwnProperty( key ) && ( !vars || !(key in vars) ) && !v._locked && isEmptyObj( v._partOf ) ) {
-							ret = ret && v[ "delete" ]();
+						if ( this.table.hasOwnProperty( key ) && ( !vars || !(key in vars) ) && !v._isConst && isEmptyObj( v._partOf ) ) {
+							ret = ret && v.remove();
 							delete this.table[ key ];
 							del = true;
 						}
@@ -3547,27 +3273,35 @@
 					
 					return del ? this.clean( vars ) : ret;
 				},
-				set : function( key, val, ctxt ) {
+				set : function( key, val ) {
 					if ( key in this.table ) {
-						if ( this.table[ key ]._locked )
+						if ( this.table[ key ]._isConst )
 							error( "Bad lvalue: variable is immutable (constant)." );
 						
 						return this.table[ key ].set( val );
 					}
 					
-					var v = Variable( key, val, ctxt );
+					var v = Variable( key, val );
 					return this.table[ v._key ] = v;
 				},
-				"delete" : function( key ) {
+				remove : function( key ) {
 					if ( key in this.table ) {
-						if ( this.table[ key ]._locked )
+						if ( this.table[ key ]._isConst )
 							error( "Bad lvalue: variable is immutable (constant)." );
 						
 						for ( var id in this.table[ key ]._partOf )
-							if ( this.table[ key ]._partOf.hasOwnProperty( id ) )
-								error( "Cannot delete variable " + key + ". It is still used in: " + this.table[ key ]._partOf[ id ].toString() + "." );
+							if ( this.table[ key ]._partOf.hasOwnProperty( id ) ) {
+								var partOf = this.table[ key ]._partOf[ id ];
+								
+								while ( partOf instanceof Expression ) {
+									for ( id in partOf._partOf )
+										partOf = partOf._partOf[ id ];
+								}
+								
+								error( "Cannot delete variable " + key + ". It is still used in: " + partOf.toString() + "." );
+							}
 						
-						var ret = this.table[ key ][ "delete" ]();
+						var ret = this.table[ key ].remove();
 						
 						delete this.table[ key ];
 						
@@ -3630,8 +3364,7 @@
 						
 						for ( var key in consts ) {
 							if ( consts.hasOwnProperty( key ) ) {
-								table[ key ] = Variable( key, consts[ key ] );
-								table[ key ]._locked = true;
+								table[ key ] = Variable( key, consts[ key ], true );
 							}
 						}
 					}
@@ -3642,7 +3375,7 @@
 					if ( !ops || !ops.length )
 						return base || operators;
 					
-					var not = ops[ 0 ] === "not",
+					var not = ops.op === "not",
 						ret = base ? Object.create( base ) : not ? Object.create( operators ) : {};
 					
 					for ( var idx = not ? 1 : 0, len = ops.length; idx < len; idx++ ) {
@@ -3675,7 +3408,7 @@
 							"id" : true
 						};
 					
-					var not = lits[ 0 ] === "not",
+					var not = lits.op === "not",
 						ret = Object.create( base ) || {};
 					
 					for ( var idx = 0; idx < lits.length; idx++ ) {
@@ -3690,12 +3423,15 @@
 			
 			return function Interpreter( template, consts, litTable, opTable ) {
 				var react = function() {
-						var ret;
+						var ret, tmp;
 						
-						ret = interpret.apply( props, arguments );
+						ret = tmp = interpret.apply( props, arguments );
 						
-						if ( ret && ( ret._isVar || ret._isCall || ret._isPath || ret._isExprArray ) )
+						if ( ret && ret instanceof Reactive )
 							ret = ret.valueOf();
+						
+						if ( tmp instanceof Expression )
+							tmp.unlink();
 						
 						return ret;
 					},
@@ -3719,8 +3455,8 @@
 							
 							ret = interpret.apply( props, arguments );
 							
-							if ( ret._isExprArray || ret._isCall )
-								ret = props.nameTable.set( null, ret );
+							if ( ret instanceof Expression && !dontTrack )
+								ret = props.nameTable.set( ret.guid, ret );
 							
 							dontTrack = false;
 							
@@ -3733,7 +3469,11 @@
 						}
 					}
 					
-					react.leak.nameTable = props.nameTable;
+					react.leak.nameTable	= props.nameTable;
+					react.leak.Variable		= Variable;
+					react.leak.Expression	= Expression;
+					react.leak.FunctionCall = FunctionCall;
+					react.leak.PropPath		= PropPath;
 				}
 				
 				react.Interpreter = Interpreter;
