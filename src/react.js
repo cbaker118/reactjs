@@ -133,7 +133,6 @@
 					infix : function( s, bp, led ) {
 						s.led = led || function ( expr ) {
 							expr.p in expr.o && ( this.first = expr.o[ expr.p ] );
-							//this.second = undefined;
 							this.ledEval = operators[ this.id ].ledEval;
 							expr.o[ expr.p ] = this;
 							
@@ -152,7 +151,6 @@
 					infixr : function( s, bp, led ) {
 						s.led = led || function ( expr ) {
 							expr.p in expr.o && ( this.first = expr.o[ expr.p ] );
-							//this.second = undefined;
 							this.ledEval = operators[ this.id ].ledEval;
 							expr.o[ expr.p ] = this;
 							
@@ -170,7 +168,6 @@
 
 					prefix : function( s, bp, nud ) {
 						s.nud = nud || function ( expr ) {
-							//this.first = undefined;
 							this.nudEval = operators[ this.id ].nudEval;
 							expr.o[ expr.p ] = this;
 							
@@ -187,15 +184,16 @@
 					},
 					
 					assignment : function( s, bp, led ) {
-						return opType.infixr( s, bp, led || function ( expr ) {
+						return opType.infixr( s, bp, led || function ( expr, interpreter ) {
 							expr.p in expr.o && ( this.first = expr.o[ expr.p ] );
-							//this.second = undefined;
 							this.assignment = true;
 							this.ledEval = operators[ this.id ].ledEval;
 							expr.o[ expr.p ] = this; 
 							
-							if ( this.first )
-								assignTo = this.first.id === "(id)" ? this.first.value : this.first._key;
+							if ( this.first && this.first.id === "(id)" )
+								action.assign = interpreter.nameTable.table[ this.first.value ];
+							else if ( this.first instanceof Variable || this.first instanceof PropPath )
+								action.assign = this.first;
 							
 							return {
 								o : this,
@@ -210,7 +208,6 @@
 					
 					"delete" : function( s, bp, nud ) {
 						return opType.prefix( s, bp, nud || function ( expr ) {
-							//this.first = undefined;
 							this.assignment = true;
 							this.nudEval = operators[ this.id ].nudEval;
 							expr.o[ expr.p ] = this;
@@ -229,7 +226,6 @@
 					call : function( s, bp, led ) {
 						return opType.infix( s, bp, led || function( expr ) {
 							expr.p in expr.o && ( this.first = expr.o[ expr.p ] );
-							//this.second = undefined;
 							this.call = true;
 							this.ledEval = operators[ this.id ].ledEval;
 							expr.o[ expr.p ] = this;
@@ -271,9 +267,9 @@
 												
 												type = !operand ? 
 														"lit" :
-													operand instanceof Expression && !operand._inCtxt ?
+													operand instanceof Expression && !operand.hasOwnProperty( "context" ) ?
 														"arr" :
-													operand instanceof Reactive || ( operand._isFunc && delete operand._isFunc ) ?
+													operand instanceof Reactive || operand._isFunc ?
 														"ref" :
 														"lit";
 												
@@ -308,17 +304,17 @@
 												
 												typeL = !left ? 
 														"lit" :
-													left instanceof Expression && !left._inCtxt ?
+													left instanceof Expression && !left.hasOwnProperty( "context" ) ?
 														"arr" :
-													left instanceof Reactive || ( left._isFunc && delete left._isFunc) ?
+													left instanceof Reactive || left._isFunc ?
 														"ref" :
 														"lit";
 												
 												typeR = !right ? 
 														"lit" :
-													right instanceof Expression && !right._inCtxt ?
+													right instanceof Expression && !right.hasOwnProperty( "context" ) ?
 														"arr" :
-													right instanceof Reactive || ( right._isFunc && delete right._isFunc) ?
+													right instanceof Reactive || right._isFunc ?
 														"ref" :
 														"lit";
 												
@@ -445,17 +441,17 @@
 				if ( !v || ( !isVar && !isPath && v.id !== "(id)" && !isPropAccess ) )
 					error( "Bad lvalue: no variable or object property." );
 				
-				assignTo = null;	//extern variable to keep track of assignments
+				action.assign = false;	//extern variable to keep track of assignments
 				
 				if ( isPropAccess )
-					return PropPath( v, false, val, false )._evaled.value;
+					return PropPath( v, false, val, false );
 				else if ( isPath )
-					return v.set( false, val, false )._evaled.value;
+					return v.set( false, val, false );
 				
 				return interpreter.nameTable.set( v._key || v.value, val );
 			} );
 			
-			operator( "(op=)", "infixr", 10, function( expr ) {
+			operator( "(op=)", "infixr", 10, function( expr, interpreter ) {
 					var op, token;
 					
 					op = operators[ "=" ];
@@ -468,7 +464,7 @@
 						id 		: "=",
 						arity 	: "operator"
 					};
-					expr = token.led( expr );
+					expr = token.led( expr, interpreter );
 					"first" in expr.o && ( expr.o.second = expr.o.first );
 					
 					op = operators[ this.value ];
@@ -481,7 +477,7 @@
 						id 		: this.value,
 						arity 	: "operator"
 					};
-					expr = token.led( expr );
+					expr = token.led( expr, interpreter );
 					
 					op = operators[ "(" ];
 					token = {
@@ -493,7 +489,7 @@
 						id 		: "(",
 						arity 	: "operator"
 					};
-					expr = token.nud( expr );
+					expr = token.nud( expr, interpreter );
 					expr.end = expr.parent.end;
 					expr.rbp = 10;
 					
@@ -502,7 +498,7 @@
 				null
 			);
 			
-			operator( "(op=)", "prefix", 10, function( expr ) {
+			operator( "(op=)", "prefix", 10, function( expr, interpreter ) {
 					var op, token;
 					
 					if ( this.value === "(" ) {
@@ -516,7 +512,7 @@
 							id 		: this.value,
 							arity 	: "operator"
 						};
-						expr = token.nud( expr );
+						expr = token.nud( expr, interpreter );
 					}
 					
 					op = operators[ "=" ];
@@ -529,7 +525,7 @@
 						id 		: "=",
 						arity 	: "operator"
 					};
-					expr = token.led( expr );
+					expr = token.led( expr, interpreter );
 					"first" in expr.o && ( expr.o.second = expr.o.first );
 					
 					if ( this.value !== "(" ) {
@@ -543,7 +539,7 @@
 							id 		: this.value,
 							arity 	: "operator"
 						};
-						expr = token.nud( expr );
+						expr = token.nud( expr, interpreter );
 					}
 					
 					return expr;
@@ -559,9 +555,9 @@
 					error( "Bad lvalue: no object property." );
 				
 				if ( isPropAccess )
-					return PropPath( path, true, val, false )._evaled.value;
+					return PropPath( path, true, val, false );
 				else 
-					return path.set( true, val, false )._evaled.value;
+					return path.set( true, val, false );
 			} );
 			
 			operator( "?", "infix", 20, null, ( function() {
@@ -1562,11 +1558,10 @@
 			} );
 			
 			operator( "~", "prefix", 90, function ( expr ) {
-					//this.first = undefined;
 					this.nudEval = operators[ this.id ].nudEval;
 					expr.o[ expr.p ] = this;
 					
-					deregister = true;
+					action.deregister = true;
 					
 					return {
 						o : this,
@@ -1581,25 +1576,32 @@
 					if ( !v || !(v instanceof PropPath) && !(v instanceof FunctionCall) )
 						error( "Bad lvalue: no reactive object property or function call." );
 					
-					deregister = false;
+					action.deregister = false;
 					
 					return v.remove();
 				}
 			);
 			
-			operator( "#", "prefix", 90, null, {
-				lit : function( lit ) {
-					return lit;
+			operator( "#", "prefix", 90, function ( expr ) {
+					this.nudEval = operators[ this.id ].nudEval;
+					expr.o[ expr.p ] = this;
+					
+					action.evaluate = true;
+					
+					return {
+						o : this,
+						p : "first",
+						rbp : this.lbp,
+						end : null,
+						parent : expr,
+						prevToken : expr.o.id
+					};
 				},
-				
-				ref : function( ref ) {
-					return ref.valueOf();
-				},
-				
-				arr : function( arr ) {
-					return arr.valueOf();
+				function( v ) {
+					action.evaluate = false;
+					return v;
 				}
-			} );
+			);
 			
 			operator( "{", "infix", 100, function( expr ) {
 					this.first = expr.o[ expr.p ];
@@ -1620,25 +1622,28 @@
 					var idx;
 					
 					if ( !(v instanceof Variable) && !(v instanceof Expression) && !v._isFunc )
-						error( "{ must be preceeded by a variable, expression of function!" );
+						error( "{ must be preceeded by a variable, expression or function!" );
 					
-					if ( ctxt && ctxt instanceof Expression && ctxt._value.op === "," ) {
+					if ( ctxt instanceof Expression && ctxt._value.op === "," ) {
 						idx = ctxt._value.length;
 						while( idx-- ) {
-							if ( ctxt._value[ idx ] instanceof Expression )
+							if ( ctxt._value[ idx ] instanceof Expression || ctxt._value[ idx ] instanceof FunctionCall || ctxt._value[ idx ] instanceof PropPath )
 								error( "context data must be a literal or variable!" );
 						}
 						
-					} else if ( ctxt !== undefined ) {
-						if ( ctxt instanceof Expression )
-							error( "context data must be a literal or variable!" );
+						if ( v._isFunc )
+							return v.apply( null, ctxt.valueOf()._value.value );
+						
+					} else if ( ctxt instanceof Expression || ctxt instanceof FunctionCall || ctxt instanceof PropPath ) {
+						error( "context data must be a literal or variable!" );
 					}
 					
 					if ( ctxt ) {
-						if ( v._isFunc )
-							v._context = ctxt;
-						else
+						if ( v._isFunc ) {
+							v = v( ctxt.valueOf() );
+						} else {
 							v = v.inCtxt( ctxt );
+						}
 					}
 					
 					return v;
@@ -1661,7 +1666,7 @@
 				if ( funcIsLit && !(args instanceof Reactive) )
 					return func( args );
 				
-				if ( deregister )
+				if ( action.deregister )
 					return FunctionCall.prototype._search( func, args );
 				
 				if ( args instanceof Expression && args._value.op === "," ) {
@@ -1688,7 +1693,7 @@
 				}
 				
 				call = FunctionCall( func, args, true );
-				call._call();
+				call._call( 1 );
 				return call;
 			} );
 			
@@ -1708,7 +1713,7 @@
 				if ( funcIsLit && !(args instanceof Reactive) )
 					return;
 				
-				if ( deregister )
+				if ( action.deregister )
 					return FunctionCall.prototype._search( func, args );
 				
 				if ( args instanceof Expression && args._value.op === "," ) {
@@ -1735,16 +1740,22 @@
 						if ( prop.id === "(id)" )
 							prop = prop.value;
 						
-						var path = [ obj, prop ];
-						path = PropPath.prototype._search( path );
-						if ( path )
-							return path;
+						var path = [ obj, prop ],
+							found = PropPath.prototype._search( path );
+						
+						if ( found )
+							return found;
+						
+						if ( action.evaluate )
+							return obj[ prop ];
+						
+						return Expression( ".", path );
 						
 						if ( this.nextToken === "=" || this.nextToken === "~=" ||
 							 this.nextToken === "(" || this.nextToken === ":(" || this.nextToken === "~(" ||
 							 ( ( this.prevToken === "delete" || this.prevToken === "~delete" || this.prevToken === "~" ) &&
 							 ( this.nextToken !== "." && this.nextToken !== "[" ) ) )
-							return Expression( ".", [ obj, prop ] );
+							return Expression( ".", path );
 						
 						return obj[ prop ];
 					},
@@ -1791,10 +1802,9 @@
 							prop = prop.value;
 						
 						if ( obj._value.op === "." ) {
-							obj = PropPath.prototype._search( obj._value ) || obj;
-							
-							if ( obj instanceof Expression )
-								return obj.push( prop ), obj;
+							var arr = obj._value.slice();
+							arr.push( prop );
+							return PropPath.prototype._search( arr ) || ( obj.push( prop ), obj );
 						}
 						
 						var path = [ obj, prop ];
@@ -1803,10 +1813,9 @@
 					},
 					ref : function( obj, prop ) {
 						if ( obj._value.op === "." ) {
-							obj = PropPath.prototype._search( obj._value ) || obj;
-							
-							if ( obj instanceof Expression )
-								return obj.push( prop ), obj;
+							var arr = obj._value.slice();
+							arr.push( prop );
+							return PropPath.prototype._search( arr ) || ( obj.push( prop ), obj );
 						}
 						
 						var path = [ obj, prop ];
@@ -1818,10 +1827,9 @@
 							prop = PropPath.prototype._search( prop._value ) || prop;
 						
 						if ( obj._value.op === "." ) {
-							obj = PropPath.prototype._search( obj._value ) || obj;
-							
-							if ( obj instanceof Expression )
-								return obj.push( prop ), obj;
+							var arr = obj._value.slice();
+							arr.push( prop );
+							return PropPath.prototype._search( arr ) || ( obj.push( prop ), obj );
 						}
 						
 						var path = [ obj, prop ];
@@ -1887,8 +1895,11 @@
 			);
 			
 			//interpret function
-			var assignTo = null,
-				deregister = false,
+			var action = {
+					assign : false,
+					deregister : false,
+					evaluate : false,
+				},
 				opParts = {			//parts, a multiple-character operator is allowed to be composed of
 					"=" : true,
 					"!" : true,
@@ -1915,13 +1926,14 @@
 				endExpr = function( expr, token ) {
 					var parent = expr.parent;
 					
-					//fix of assignTo for operator assignment with double assignment
-					if ( expr.o.assignment && !assignTo && expr.o.first ) {
+					//fix of action.assign for operator assignment with double assignment
+					if ( expr.o.assignment && expr.o.first && expr.o.second ) {
 						if ( expr.o.first === expr.o.second && expr.o.first instanceof Expression )
 							//setting anonymous variable, which actually is an expression...
 							return parent.o[ parent.p ] = expr.o.first;
 						
-						assignTo = expr.o.first.id === "(id)" ? expr.o.first.value : expr.o.first._key;
+						if ( !action.assign )
+							action.assign = expr.o.first.id === "(id)" ? this.nameTable.table[ expr.o.first.value ] : expr.o.first;
 					}
 					
 					expr.nextToken = !token || !token.lbp ? undefined : token.id;
@@ -1946,12 +1958,19 @@
 					}
 					
 					//use the value of a variable in case of assigning to the same variable
-					if ( assignTo ) {
-						if ( !expr.o.assignment && expr.o.first && expr.o.first._key === assignTo )
-							expr.o.first = expr.o.first._value.value;
+					if ( action.assign ) {
+						if ( !expr.o.assignment && expr.o.first instanceof Reactive && expr.o.first === action.assign )
+							expr.o.first = expr.o.first._value.path || expr.o.first._value.value;
 						
-						if ( expr.o.second && expr.o.second._key === assignTo )
-							expr.o.second = expr.o.second._value.value;
+						if ( expr.o.second instanceof Reactive && expr.o.second === action.assign )
+							expr.o.second = expr.o.second._value.path || expr.o.second._value.value;
+					}
+					
+					if ( action.evaluate ) {
+						expr.o.first = expr.o.first.valueOf();
+						
+						if ( expr.o.second )
+							expr.o.second = expr.o.second.valueOf();
 					}
 					
 					if ( typeof expr.o.first === "function" )
@@ -1981,10 +2000,10 @@
 							//FIXME: hack for prefix assignment
 							//not nice, but works
 							if ( !expr.parent.o.first && expr.parent.o.assignment ) {
-								assignTo = expr.o[ expr.p ].id === "(id)" ? expr.o[ expr.p ].value : expr.o[ expr.p ]._key;
+								action.assign = expr.o[ expr.p ].id === "(id)" ? this.nameTable.table[ expr.o[ expr.p ].value ] : expr.o[ expr.p ];
 								expr.parent.o.first = expr.o[ expr.p ];
 							} else if ( expr.parent.o.id === "(" && !expr.o.first && expr.o.assignment ) {
-								assignTo = expr.o[ expr.p ].id === "(id)" ? expr.o[ expr.p ].value : expr.o[ expr.p ]._key;
+								action.assign = expr.o[ expr.p ].id === "(id)" ? this.nameTable.table[ expr.o[ expr.p ].value ] : expr.o[ expr.p ];
 								expr.o.first = expr.o[ expr.p ];
 							}
 						}
@@ -2011,8 +2030,11 @@
 						token,				//current token
 						expr,				//current expression working on
 						ret = {},			//object to contain the top level expression, that is returned
-						newExpr = true,
-						assignOp = false;
+						newExpr = true
+					
+					action.assign = false;
+					action.deregister = false;
+					action.evaluate = false;
 					
 					//initialize top-level expression
 					expr = {
@@ -2304,16 +2326,16 @@
 									//put token into expression
 									if ( !( expr.p in expr.o ) && expr.rbp !== Infinity && ( !expr.end || expr.end !== token.id ) ) {
 										//dont do this for ending tokens
-										expr = token.nud( expr );
+										expr = token.nud( expr, this );
 										
 										if ( expr.parent && expr.o[ expr.p ] ) {
 											//FIXME: hack for prefix assignment
 											//not nice, but works
 											if ( !expr.parent.o.first && expr.parent.o.assignment ) {
-												assignTo = expr.o[ expr.p ].id === "(id)" ? expr.o[ expr.p ].value : expr.o[ expr.p ]._key;;
+												action.assign = expr.o[ expr.p ].id === "(id)" ? this.nameTable.table[ expr.o[ expr.p ].value ] : expr.o[ expr.p ];
 												expr.parent.o.first = expr.o[ expr.p ];
 											} else if ( expr.parent.o.id === "(" && !expr.o.first && expr.o.assignment ) {
-												assignTo = expr.o[ expr.p ].id === "(id)" ? expr.o[ expr.p ].value : expr.o[ expr.p ]._key;;
+												action.assign = expr.o[ expr.p ].id === "(id)" ? this.nameTable.table[ expr.o[ expr.p ].value ] : expr.o[ expr.p ];
 												expr.o.first = expr.o[ expr.p ];
 											}
 										}
@@ -2362,7 +2384,7 @@
 									
 									//extend expression
 									if ( expr.rbp < token.lbp )
-										expr = token.led( expr );
+										expr = token.led( expr, this );
 									
 									token = undefined;
 								}
@@ -2374,14 +2396,12 @@
 					while ( expr.parent )
 						expr = endExpr.call( this, expr, token );
 					
-					//finetune return value
-					if ( ret.value ) {
-						if ( ret.value.id === "(id)" ) {
-							if ( !( ret.value.value in this.nameTable.table ) )
-								error( ret.value.value + " is not defined." );
-							
-							ret.value = this.nameTable.table[ ret.value.value ];
-						}
+					//return variable object instead of token object
+					if ( ret.value && ret.value.id === "(id)" ) {
+						if ( !( ret.value.value in this.nameTable.table ) )
+							error( ret.value.value + " is not defined." );
+						
+						ret.value = this.nameTable.table[ ret.value.value ];
 					}
 					
 					//return top-level expression
@@ -2391,8 +2411,8 @@
 			var Reactive = function( proto ) {
 					var r = Object.create( Reactive.prototype );
 					
-					if ( proto )
-						r._proto  = proto;
+					if ( !proto )
+						return r;
 					
 					for ( var id in proto )
 						if ( proto.hasOwnProperty( id ) )
@@ -2425,6 +2445,8 @@
 					
 					if ( this._value[ id ] instanceof Expression )
 						this._value[ id ].unlink( undefined, rmvList );
+					else if ( this._value[ id ] instanceof Context )
+						rmvList ? (rmvList[ this._value[ id ]._guid ] = this._value[ id ]) : this._value[ id ].remove();
 					else if ( this._value[ id ] instanceof PropPath &&
 							  isEmptyObj( this._value[ id ]._partOf ) &&
 							  !("value" in this._value[ id ]._value) )
@@ -2436,7 +2458,6 @@
 			
 			Reactive.prototype = {
 				_guid : 0,
-				_proto : null,
 				
 				_partOf : null,
 				_value  : null,
@@ -2444,7 +2465,7 @@
 				
 				link : function( id, rmvList ) {
 					if ( this instanceof Expression )
-						this.linked = true;
+						this._linked = true;
 					
 					if ( id )
 						return linkId.call( this, id, rmvList );
@@ -2457,18 +2478,70 @@
 						return unlinkId.call( this, id, rmvList );
 					
 					if ( this instanceof Expression )
-						delete this.linked;
+						delete this._linked;
 					
 					for ( id in this._value )
 						unlinkId.call( this, id, rmvList );
 				},
 				remove : function() {
+					this.unlink();
 					delete this._guid;
 					delete this._partOf;
 					delete this._evaled;
 					delete this._value;
+					
+					return true;
 				}
 			};
+			
+			var Context = function( r, ctxt ) {
+				var v = this instanceof Context ? this : Object.create( Context.prototype );
+				
+				v._guid	  = Reactive.prototype._guid++;
+				v._partOf = {};
+				v._evaled = {};
+				v._value  = {
+					value : r,
+					context : ctxt
+				};
+				
+				!dontTrack && v.link();
+				
+				return v;
+			};
+			
+			Context.prototype = Reactive( {
+				valueOf : function() {
+					if ( "value" in this._evaled )
+						return this._evaled.value;
+					
+					if ( !("context" in this._evaled) ) {
+						if ( this._value.context instanceof Expression && this._value.context._value.op === "," )
+							this._evaled.context = this._value.context.valueOf()._value;
+						else
+							this._evaled.context = this._value.context.valueOf();
+					}
+					
+					return this._evaled.value = this._value.value.valueOf[ this._evaled.context instanceof Array ? "apply" : "call" ]( this._value.value, this._evaled.context );
+				},
+				toString : function() {
+					if ( "string" in this._evaled )
+						return this._evaled.string;
+					
+					return this._evaled.string = "( " + String( this._value.value ) + " ){ " + String( this._value.context ) + " }";
+				},
+				
+				invalidate : function() {
+					delete this._evaled.value;
+					delete this._evaled.string;
+					delete this._evaled.context;
+					
+					for ( var id in this._partOf )
+						this._partOf[ id ].invalidate( this );
+					
+					return this;
+				}
+			} );
 			
 			//Variable creation and properties
 			var Variable = function( key, val, isConst ) {
@@ -2499,52 +2572,25 @@
 				_key	 : "unnamed",
 				_isNamed : false,
 				_isConst : false,
-				_inCtxt  : false,
 				
 				valueOf : function() {
 					try {
-						var idx, context,
-							value  = this._value.value,
+						var value  = this._value.value,
 							evaled = this._evaled;
 						
-						if ( !this._value.context && arguments.length ) {
-							if ( typeof value === "function" ) {
-								context = [];
-								idx = arguments.length;
-								while( idx-- )
-									context[ idx ] = arguments[ idx ].valueOf();
-								
-								return value.apply( null, context );
-							
-							} else if ( value && value.valueOf )
+						if ( arguments.length ) {
+							//evaluation in context
+							if ( typeof value === "function" )
+								return value.apply( null, arguments );
+							else if ( value && value.valueOf )
 								return value.valueOf.apply( value, arguments );
-							
 							else
 								return value;
 						}
 						
 						if ( !evaled.hasOwnProperty( "value" ) ) {
-							if ( this._value.context ) {
-								if ( this._value.context instanceof Expression && this._value.context._value.op === "," ) {
-									context = [];
-									idx = this._value.context._value.length;
-									while( idx-- )
-										context[ idx ] = this._value.context._value[ idx ].valueOf();
-								
-								} else {
-									context = [ this._value.context.valueOf() ];
-								}
-								
-								if ( typeof value === "function" )
-									evaled.value = value.apply( null, context );
-								else if ( value && value.valueOf )
-									evaled.value = value.valueOf.apply( value, context );
-								else
-									evaled.value = value;
-							
-							} else if ( value && value.valueOf )
+							if ( value && value.valueOf )
 								evaled.value = value.valueOf();
-							
 							else
 								evaled.value = value;
 						}
@@ -2560,13 +2606,10 @@
 						evaled = this._evaled;
 					
 					try {
-						if ( evaled.hasOwnProperty( "string" ) )
+						if ( "string" in evaled ) 
 							return evaled.string;
 						
 						evaled.string = this._isNamed ? this._key + " = " : "";
-						
-						if ( this._inCtxt )
-							evaled.string += "( ";
 						
 						if ( typeof value === "function" )
 							evaled.string += "function(){...}";
@@ -2574,9 +2617,7 @@
 							evaled.string += value.toString();
 						else
 							evaled.string += String( value );
-						
-						if ( this._inCtxt )
-							evaled.string += " ){ " + String( this._value.context ) + " }";
+							
 						
 						return evaled.string;
 						
@@ -2596,30 +2637,39 @@
 				},
 				
 				set : function( val ) {
-					//remove context in advance
-					if ( "context" in this._value ) {
-						delete this._value.context;
-						this.unlink( "context" );
-					}
-					
 					//new value is current value
-					//adjust context, if at all
-					if ( val && this._value === val ) {
-						if ( val._isFunc && val._context ) {
-							this._value.context = val._context;
-							this.link( "context" );
-							delete val._context;
-						}
-						
+					if ( val && this._value === val )
 						return this;
-					}
+					
+					//new value is current value in context
+					if ( val instanceof Context && val._value.value === this._value.value )
+						val = val.valueOf();
+					
+					if ( val instanceof Expression && val._value.op === "." )
+						val = PropPath( val );
 					
 					//delete links from value to this instance
 					var rmvList = {};
 					this.unlink( undefined, rmvList );
 					
 					//set new value
+					var oldVal = this._value.value;
 					this._value.value = val;
+					
+					if ( val && val._isFunc )
+						delete val._isFunc;
+					
+					try {
+						this.invalidate();
+					} catch ( e ) {
+						//restore old value
+						delete this._evaled.value;
+						delete this._evaled.string;
+						this._value.value = oldVal;
+						!dontTrack && this.link( undefined, rmvList );
+						
+						throw( e );
+					}
 					
 					//link value to this instance
 					!dontTrack && this.link( undefined, rmvList );
@@ -2627,44 +2677,17 @@
 					for ( var id in rmvList )
 						rmvList[ id ].remove();
 					
-					//context variable?
-					if ( val && val._isFunc ) {
-						delete val._isFunc;
-						
-						if ( val._context ) {
-							this._value.context = val._context;
-							this.link( "context" );
-							delete val._context;
-						}
-					}
-					
-					this.invalidate();
-					
 					return this;
 				},
 				inCtxt : function( ctxt ) {
-					if ( this._value.context )
-						return this;
-					
-					var v = Object.create( this );
-					
-					v._guid = Reactive.prototype._guid++;
-					v._value = Object.create( this._value );
-					v._value.context = ctxt;
-					v._evaled = {};
-					v._inCtxt = true;
-					
-					return v;
+					return Context( this, ctxt );
 				},
 				remove : function() {
-					this.unlink();
 					delete this._key;
 					delete this._isNamed;
 					delete this._isConst;
 					
-					Reactive.prototype.remove.call( this );
-					
-					return true;
+					return Reactive.prototype.remove.call( this );
 				}
 			} );
 			
@@ -2682,49 +2705,69 @@
 			};
 			
 			Expression.prototype = Reactive( {
-				_inCtxt : false,
 				_linked : false,
 				
 				valueOf : function() {
 					try {
+						if ( !arguments.length && this._evaled.hasOwnProperty( "value" ) )
+							return this._evaled.value;
+						
 						var value = this._value,
 							op = value.op,
-							idx,
+							idx = value.length,
+							len,
 							ret,
 							cur,
-							context;
+							forwardEval = false;
 						
-						context = Array.prototype.slice.apply( value.context || arguments );
-						idx = context.length;
-						while( idx-- )
-							context[ idx ] = context[ idx ].valueOf();
+						if ( op === "." )
+							forwardEval = true;
 						
-						idx = value.length;
 						if ( idx === 1 ) {
 							//unary
 							if ( value[ 0 ] instanceof Reactive )
-								cur = value[ 0 ].valueOf.apply( value[ 0 ], context );
-							else if ( context.length && typeof value[ 0 ] === "function" )
-								cur = value[ 0 ].apply( value[ 0 ], context );
+								cur = value[ 0 ].valueOf.apply( value[ 0 ], arguments );
+							else if ( arguments.length && typeof value[ 0 ] === "function" )
+								cur = value[ 0 ].apply( value[ 0 ], arguments );
 							else
 								cur = value[ 0 ];
 							
-							return operators[ op ].nudEval.call( this, cur, ret );
+							action.evaluate = true;
+							ret = operators[ op ].nudEval.call( this, cur, ret );
+							action.evaluate = false;
+							
+							return this._evaled.value = ret;
 						}
 						
 						//binary with two or more operands
-						while( idx-- ) {
-							if ( value[ idx ] instanceof Reactive )
-								cur = value[ idx ].valueOf.apply( value[ idx ], context );
-							else if ( context.length && typeof value[ idx ] === "function" )
-								cur = value[ idx ].apply( value[ idx ], context );
-							else
-								cur = value[ idx ];
-							
-							ret = ( ret === undefined  ) ? cur : operators[ op ].ledEval.call( this, cur, ret );
-						}
+						if ( forwardEval )
+							for ( len = idx, idx = 0; idx < len; idx++ ) {
+								if ( value[ idx ] instanceof Reactive )
+									cur = value[ idx ].valueOf.apply( value[ idx ], arguments );
+								else if ( arguments.length && typeof value[ idx ] === "function" )
+									cur = value[ idx ].apply( value[ idx ], arguments );
+								else
+									cur = value[ idx ];
+								
+								action.evaluate = true;
+								ret = ( ret === undefined  ) ? cur : operators[ op ].ledEval.call( this, ret, cur );
+								action.evaluate = false;
+							}
+						else
+							while( idx-- ) {
+								if ( value[ idx ] instanceof Reactive )
+									cur = value[ idx ].valueOf.apply( value[ idx ], arguments );
+								else if ( arguments.length && typeof value[ idx ] === "function" )
+									cur = value[ idx ].apply( value[ idx ], arguments );
+								else
+									cur = value[ idx ];
+								
+								action.evaluate = true;
+								ret = ( ret === undefined  ) ? cur : operators[ op ].ledEval.call( this, cur, ret );
+								action.evaluate = false;
+							}
 						
-						return ret;
+						return this._evaled.value = ret;
 					
 					} catch( e ) {
 						error( "Expression.valueOf: " + e.message );
@@ -2749,12 +2792,17 @@
 									str = str.slice( 0, -op.length );
 								}
 								
-								if ( ( op === "*" && value[ idx ]._value.op === "+" ) || op === "^" )
+								if ( operators[ op ].lbp > operators[ value[ idx ]._value.op ].lbp )
 									str += "(";
 								
-								str += value[ idx ].toString();
+								if ( typeof value[ idx ] === "function" )
+									str += "function(){...}";
+								else if ( value[ idx ] && value[ idx ].toString )
+									str += value[ idx ].toString();
+								else
+									str += String( value[ idx ] );
 								
-								if ( ( op === "*" && value[ idx ]._value.op === "+" ) || op === "^" )
+								if ( operators[ op ].lbp > operators[ value[ idx ]._value.op ].lbp )
 									str += ")";
 							
 							} else {
@@ -2776,6 +2824,10 @@
 									if ( typeof value[ idx ] === "number" && op === "+" && value[ idx ] < 0 ) {
 										str = str.slice( 0, -op.length );
 										str += "-" + Math.abs( value[ idx ] );
+									} else if ( value[ idx ].toString() === "[object Array]" ) {
+										str += "[...]";
+									} else if ( value[ idx ].toString() === "[object Object]" ) {
+										str += "{...}";
 									} else {
 										str += value[ idx ];
 									}
@@ -2826,19 +2878,19 @@
 					var l = this._value.length,
 						newL = Array.prototype.push.apply( this._value, arguments );
 					
-					this.linked && this.linkEntries( l, newL-1 );
+					this._linked && this.linkEntries( l, newL-1 );
 					this.invalidate();
 					
 					return newL;
 				},
 				pop : function() {
-					this.linked && this.unlinkEntries( this._value.length-1 );
+					this._linked && this.unlinkEntries( this._value.length-1 );
 					this.invalidate();
 					
 					return Array.prototype.pop.apply( this._value, arguments );
 				},
 				shift : function() {
-					this.linked && this.unlinkEntries( 0 );
+					this._linked && this.unlinkEntries( 0 );
 					this.invalidate();
 					
 					return Array.prototype.shift.apply( this._value, arguments );
@@ -2846,18 +2898,18 @@
 				unshift : function() {
 					var l = Array.prototype.unshift.apply( this._value, arguments );
 					
-					this.linked && this.linkEntries( 0, arguments.length-1 );
+					this._linked && this.linkEntries( 0, arguments.length-1 );
 					this.invalidate();
 					
 					return l;
 				},
 				splice : function( idx, del ) {
-					this.linked && this.unlinkEntries( idx, idx+del );
+					this._linked && this.unlinkEntries( idx, idx+del );
 					
 					var entries = Array.prototype.splice.apply( this._value, arguments );
 					
 					if ( arguments.length > 2 )
-						this.linked && this.linkEntries( idx, idx+arguments.length-3 );
+						this._linked && this.linkEntries( idx, idx+arguments.length-3 );
 					
 					this.invalidate();
 					
@@ -2879,23 +2931,11 @@
 				},
 				
 				inCtxt : function( ctxt ) {
-					if ( this._value.context )
-						return this;
-					
-					var v = Object.create( this );
-					
-					v._guid = Reactive.prototype._guid++;
-					v._value = Object.create( this._value );
-					v._value.context = ctxt;
-					v._inCtxt = true;
-					
-					return v;
+					return Context( this, ctxt );
 				},
 				remove : function() {
-					this.unlink();
-					delete this._inCtxt;
-					
-					Reactive.prototype.remove.call( this );
+					delete this._linked;
+					return Reactive.prototype.remove.call( this );
 				}
 			} );
 			
@@ -2979,7 +3019,6 @@
 				
 				invalidate : function( from ) {
 					var evaled = this._evaled,
-						value  = this._value,
 						func   = this._value.func,
 						args   = this._value.args;
 					
@@ -3025,7 +3064,7 @@
 						evaled.args = args;
 					}
 					
-					this._call();
+					evaled.value = this._call();
 					
 					for ( var id in this._partOf )
 						this._partOf[ id ].invalidate( this );
@@ -3033,7 +3072,7 @@
 					return this;
 				},
 				
-				_call : function() {
+				_call : function( times ) {
 					var evaled = this._evaled,
 						value  = this._value;
 					
@@ -3043,7 +3082,7 @@
 							return evaled.value;
 						}
 						
-						var i = this._calls;
+						var i = times || this._calls;
 						if ( value.args instanceof Expression && value.args._value.op === "," )
 							while ( i-- ) 
 								evaled.value = evaled.func.apply( evaled.ctxt || window, evaled.args );
@@ -3066,12 +3105,9 @@
 					if ( this._calls -= 1 )
 						return true;
 					
-					this.unlink();
 					delete FunctionCall.prototype._calls[ this._guid ];
 					
-					Reactive.prototype.remove.call( this );
-					
-					return true;
+					return Reactive.prototype.remove.call( this );
 				}
 			} );
 			
@@ -3094,7 +3130,7 @@
 					prop : path._value[ l ].valueOf()
 				};
 				
-				for ( i = 2; i<l; i++ )
+				for ( i = 1; i<l; i++ )
 					p._evaled.ctxt = p._evaled.ctxt[ path._value[ i ].valueOf() ];
 				
 				if ( arguments.length > 1 )
@@ -3115,13 +3151,15 @@
 				},
 				
 				valueOf : function() {
-					return this._evaled.ctxt[ this._evaled.prop ];
+					return this._evaled.value || ( this._evaled.value = this._evaled.ctxt[ this._evaled.prop ] );
 				},
 				toString : function() {
-				
+					return this._evaled.string || ( this._evaled.string = this._value.path.toString() + " = " + this._value.value.toString() );
 				},
 				
 				invalidate : function( from ) {
+					delete this._evaled.string;
+					
 					var id, pathUpdate = false;
 					
 					if ( from !== undefined ) {
@@ -3188,7 +3226,7 @@
 					if ( typeof evaled.ctxt !== "object" )
 						error( "Invalid property path: " + String( value.path ) + "!" );
 					
-					for ( i = 2; i<l; i++ ) {
+					for ( i = 1; i<l; i++ ) {
 						evaled.ctxt = evaled.ctxt[ path[ i ].valueOf() ];
 						
 						if ( typeof evaled.ctxt !== "object" )
@@ -3205,6 +3243,8 @@
 							delete evaled.ctxt[ evaled.prop ];
 						else
 							evaled.ctxt[ evaled.prop ] = evaled.value;
+					} else {
+						evaled.value = evaled.ctxt[ evaled.prop ];
 					}
 				},
 				_updateValue : function() {
@@ -3231,12 +3271,9 @@
 							evaled.ctxt[ evaled.prop ] = value.backupVal;
 					}
 					
-					this.unlink();
 					delete PropPath.prototype._paths[ this._guid ];
 					
-					Reactive.prototype.remove.call( this );
-					
-					return true;
+					return Reactive.prototype.remove.call( this );
 				}
 			} );
 			
@@ -3430,7 +3467,7 @@
 						if ( ret && ret instanceof Reactive )
 							ret = ret.valueOf();
 						
-						if ( tmp instanceof Expression )
+						if ( tmp instanceof Expression || tmp instanceof Context )
 							tmp.unlink();
 						
 						return ret;

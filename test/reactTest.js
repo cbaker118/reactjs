@@ -858,16 +858,16 @@ test( "operator assignments", function() {
 	ok( rea, "react( \"rea =\", { inner : innerObj = { prop : false } } )" );
 	
 	react( "rea.=inner" );
-	strictEqual( rea._value.value, innerObj, "property access assignment: react.leak( \"rea .= inner\" )._value === innerObj" );
+	strictEqual( rea.valueOf(), innerObj, "property access assignment: react.leak( \"rea .= inner\" )._value === innerObj" );
 	
 	react( "rea[= 'prop' ]" );
-	strictEqual( rea._value.value, false, "property access assignment: react.leak( \"rea[= 'prop' ]\" )._value === false" );
+	strictEqual( rea.valueOf(), false, "property access assignment: react.leak( \"rea[= 'prop' ]\" )._value === false" );
 	
 	react( "rea ?= 'bar' : 'foo'" );
-	strictEqual( rea._value.value, "foo", "conditional assignment: react.leak( \"rea ?= 'bar' : 'foo'\" )._value === 'foo'" );
+	strictEqual( rea.valueOf(), "foo", "conditional assignment: react.leak( \"rea ?= 'bar' : 'foo'\" )._value === 'foo'" );
 	
 	react( "(= rea + 'baz' ) + 5" );
-	strictEqual( rea._value.value, "foobaz", "parenthesis assignment: react( \"(= rea + 'baz' ) + 5\" ), rea._value === 'foobaz'" );
+	strictEqual( rea.valueOf(), "foobaz", "parenthesis assignment: react( \"(= rea + 'baz' ) + 5\" ), rea._value === 'foobaz'" );
 	
 	rea = react.leak( "delete= rea" );
 	strictEqual( rea._value.value, true, "delete assignment: react( \"delete= rea\" ), rea._value === true" );
@@ -1345,12 +1345,25 @@ test( "operator assignments", function() {
 	react( "z *= z" );
 	ok( compare( z._value.value, [ "^", [ "+", 5, [ "*", 10, x ] ], 2 ] ), "named variable: react( \"z *= z\" )" );
 	
-	var obj = react.leak( "obj = ", { prop : 'str' } );
-	ok( true, "react( \"obj =\", { prop : 'str' } )" );
-	ok( react( "obj.prop += 'ing'" ), "react( \"obj.prop += 'ing'\" )" );
+	var litObj = { prop : 'str' }
+	var obj = react.leak( "obj = ", litObj );
+	ok( true, "litObj = { prop : 'str' }" );
+	ok( true, "react( \"obj =\", litObj )" );
+	ok( obj.valueOf() === litObj, "react( \"obj\" ) === litObj" );
 	
-	raises( function() { react( "obj.=prop" ) }, "react( \"obj.=prop\" ) make obj a literal -> exception because of react( \"obj.prop += 'ing'\" )" );
-	strictEqual( obj._value.value, "string", "property access assignment: react( \"obj.=prop\" )" );
+	ok( react( "obj.prop += 'ing'" ), "react( \"obj.prop += 'ing'\" )" );
+	strictEqual( litObj.prop, "string", "litObj.prop" );
+	
+	raises( function() { react( "obj.=prop" ) }, "react( \"obj.=prop\" ) makes obj a literal -> exception because of react( \"obj.prop += 'ing'\" )" );
+	strictEqual( ( function() {
+		try {
+			react( "obj.=prop" );
+		} catch( e ) {
+			return e.message;
+		}
+	}() ), "react.js | Invalid property path: obj.prop!", "react( \"obj.=prop\" ) -> exception" );
+	
+	ok( obj.valueOf() === litObj, "react( \"obj\" ).valueOf() unchanged." );
 	react( "~obj.prop" );
 	
 	var func = react.leak( "func = ", function() { return "string" } );
@@ -1423,7 +1436,7 @@ test( "property access: object is literal, property is variable", function() {
 	
 	ok( compare( react.leak( "no partOf", sObj, "[ foo ]" ), [ ".", sObj, foo ] ), "one propname is variable: react( sObj, \"[ foo ]\" )" );
 	ok( compare( react.leak( "no partOf", sObj, "[ foo ][ bar ]" ), [ ".", sObj, foo, bar ] ), "two propnames are variables: react( sObj, \"[ foo ][ bar ]\" )" );
-	ok( compare( react.leak( "no partOf", sObj, ".foo[ bar ]" ), [ ".", sObj.foo, bar ] ), "1st propname constant, 2nd variable: react( sObj, \".foo[ bar ]\" )" );
+	ok( compare( react.leak( "no partOf", sObj, ".foo[ bar ]" ), [ ".", sObj, "foo", bar ] ), "1st propname constant, 2nd variable: react( sObj, \".foo[ bar ]\" )" );
 	ok( compare( react.leak( "no partOf", sObj, "[ foo ].bar" ), [ ".", sObj, foo, "bar" ] ), "1st propname variable, 2nd constant: react( sObj, \"[ foo ].bar\" )" );
 	ok( compare( react.leak( "no partOf", sObj, "[ ", sObj, "[ foo ].bar ]" ), [ ".", sObj, [ ".", sObj, foo, "bar" ] ] ), "1st propname also uses property access: react( sObj, \"[ \", sObj, \"[ foo ].bar ]\" )" );
 } );
@@ -2052,6 +2065,7 @@ test( "assignment of literal value to property with reactive variable", function
 	ok( react( obj, ".prop = 5" ), "react( obj, \".prop = 5\" )" );
 	strictEqual( obj.prop, 5, "obj.prop" );
 	
+	react( "~", obj, ".prop" );
 	ok( react( "delete rct" ), "react( \"delete rct\" )" );
 } );
 
@@ -2702,15 +2716,14 @@ test( "simple context variables with function", function() {
 		ctxtVar;
 	
 	ok( ctxtVar = react.leak( "ctxtVar = ", func ), "context variable: react( \"ctxtVar = \", function( data ) { return ( data ? \"data\" : \"\" ) } )" );
-	ok( !("_context" in ctxtVar), "context of ctxtVar set to null" );
+	ok( !("context" in ctxtVar._value), "context of ctxtVar not set" );
 	
 	strictEqual( react( "ctxtVar" ), func, "variable acts as normal function: react( \"ctxtVar\" )" );
 	strictEqual( react( "ctxtVar{ x }" ), x.valueOf(), "evaluation in custom context: react( \"ctxtVar{ x }\" )" );
 	strictEqual( react( "ctxtVar" ), func, "variable on its own still acts as normal function: react( \"ctxtVar\" )" );
 	strictEqual( react( "ctxtVar{ 'literal' }" ), "literal", "evaluation in custom context: react( \"ctxtVar{ 'literal' }\" )" );
 	
-	react( "ctxtVar = ctxtVar{ f }" );
-	ok( ctxtVar._value.context === f, "ctxtVar itself can hold a context: react( \"ctxtVar = ctxtVar{ f }\" )" );
+	strictEqual( react( "ctxtVar = ctxtVar{ f }" ), false, "ctxtVar itself cannot hold a context and evaluates it: react( \"ctxtVar = ctxtVar{ f }\" )" );
 	
 	react( "delete ctxtVar" );
 } );
@@ -2722,16 +2735,16 @@ test( "complex context variable with function", function() {
 		cmplCtxtVar;
 	
 	ok( cmplCtxtVar = react.leak( "cmplCtxtVar = ", func, " + ' to the max!!!'" ), "context variable: react( \"cmplCtxtVar = \", function( data ) { return ( data ? \"data\" : \"\" ) }, \" + ' to the max!!!'\" )" );
-	ok( !("_context" in cmplCtxtVar), "context of cmplCtxtVar set to null" );
+	ok( !("context" in cmplCtxtVar._value ), "cmplCtxtVar is no context variable" );
 	
 	strictEqual( react( "cmplCtxtVar" ), String( func ) + " to the max!!!", "function in variable acts as normal function: react( \"cmplCtxtVar\" )" );
 	
 	strictEqual( react( "cmplCtxtVar{ f }" ), f.valueOf() + " to the max!!!", "evaluation in custom context: react( \"cmplCtxtVar{ f }\" )" );
 	strictEqual( react( "cmplCtxtVar" ), String( func ) + " to the max!!!", "variable on its own still acts as normal function: react( \"ctxtVar\" )" );
 	strictEqual( react( "cmplCtxtVar{ 'literal' }" ), "literal to the max!!!", "evaluation in custom context: react( \"cmplCtxtVar{ 'literal' }\" )" );
+	
 	react( "cmplCtxtVar = cmplCtxtVar{ f }" );
-	ok( !( "_context" in cmplCtxtVar ), "cmplCtxtVar itself does not hold a context: react( \"cmplCtxtVar = cmplCtxtVar{ f }\" )" );
-	ok( cmplCtxtVar._value.value._value.context === f, "the expression array does: react( \"cmplCtxtVar = cmplCtxtVar{ f }\" )" );
+	strictEqual( cmplCtxtVar._value.value, "false to the max!!!", "Now, cmplCtxtVar itself evaluates to its own value in the context: react( \"cmplCtxtVar = cmplCtxtVar{ f }\" )" );
 	
 	react( "delete cmplCtxtVar" );
 } );
@@ -2744,7 +2757,7 @@ test( "complex context variable with simple context variable", function() {
 	ok( react( "ctxtVar = ", func ), "context variable without default context: react( \"ctxtVar = \", function( data ) { return ( data ? \"data\" : \"\" ) } )" );
 	
 	ok( isNaN( react( "ctxtVar * 1" ) ), "ctxtVar is treated as function because of no context" );
-	debugger;
+	
 	strictEqual( react( "(ctxtVar + ' to the max!'){ f }" ), "false to the max!", "context has to propagate down: react( \"(ctxtVar + ' to the max!'){ f }\" )" );
 	strictEqual( react( "(ctxtVar{ foo } + ' to the max!'){ f }" ), "foo to the max!", "context is custom: react( \"(ctxtVar{ foo } + ' to the max!'){ f }\" )" );
 	
@@ -2776,18 +2789,26 @@ test( "complex context variable with simple context variable", function() {
 } );
 
 test( "reactive behaviour to context changes", function() {
-	var func = function() {
+	var sumHalf = function() {
 			var ret = 0, idx = arguments.length;
 			
 			while( idx-- )
 				ret += arguments[ idx ];
 			
 			return ret/2;
+		},
+		sum = function() {
+			var ret = 0, idx = arguments.length;
+			
+			while( idx-- )
+				ret += arguments[ idx ];
+			
+			return ret;
 		};
 	
-	ok( react( "ctxtVar = ", func ), "context variable without default context: react( \"ctxtVar = \", function() { var ret = 0, idx = arguments.length; while( idx-- ) ret += arguments idx ]; return ret/2; )" );
+	ok( react( "ctxtVar = ", sumHalf ), "context variable without default context: react( \"ctxtVar = \", function() { var ret = 0, idx = arguments.length; while( idx-- ) ret += arguments[ idx ]; return ret/2; )" );
+	
 	ok( react( "ctxtVar2 = (ctxtVar + 10){ x, t }" ), "complex context variable: react( \"ctxtVar2 = (ctxtVar + 10){ x, t }\" )" );
-	debugger;
 	ok( react( "ctxtVar3 = ctxtVar{ y, t } + ctxtVar{ x, t }" ), "custom context variables in variable without default context: react( \"ctxtVar3 = ctxtVar + ctxtVar{ x, t }\" )" );
 	ok( react( "ctxtVar4 = ctxtVar{ y, t } * (ctxtVar + 5){ x, t }" ), "context array in variable without default context: react( \"ctxtVar4 = ctxtVar * (ctxtVar + 5){ x, t }\" )" );
 	
@@ -2795,15 +2816,20 @@ test( "reactive behaviour to context changes", function() {
 	strictEqual( react( "ctxtVar3" ), ( y.valueOf() + t.valueOf() ) / 2 + ( x.valueOf() + t.valueOf() ) / 2, "react( \"ctxtVar3\" )" );
 	strictEqual( react( "ctxtVar4" ), ( y.valueOf() + t.valueOf() ) / 2 * ( ( x.valueOf() + t.valueOf() ) / 2 + 5 ), "react( \"ctxtVar4\" )" );
 	
-	ok( react( "y += 1" ), "react( \"y += 1\" )" );
+	ok( react( "y += 1" ), "update context y: react( \"y += 1\" )" );
 	strictEqual( react( "ctxtVar2" ), ( x.valueOf() + t.valueOf() ) / 2 + 10, "react( \"ctxtVar2\" )" );
 	strictEqual( react( "ctxtVar3" ), ( y.valueOf() + t.valueOf() ) / 2 + ( x.valueOf() + t.valueOf() ) / 2, "react( \"ctxtVar3\" )" );
 	strictEqual( react( "ctxtVar4" ), ( y.valueOf() + t.valueOf() ) / 2 * ( ( x.valueOf() + t.valueOf() ) / 2 + 5 ), "react( \"ctxtVar4\" )" );
 	
-	ok( react( "x += 1" ), "react( \"x += 1\" )" );
+	ok( react( "x += 1" ), "update context x: react( \"x += 1\" )" );
 	strictEqual( react( "ctxtVar2" ), ( x.valueOf() + t.valueOf() ) / 2 + 10, "react( \"ctxtVar2\" )" );
 	strictEqual( react( "ctxtVar3" ), ( y.valueOf() + t.valueOf() ) / 2 + ( x.valueOf() + t.valueOf() ) / 2, "react( \"ctxtVar3\" )" );
 	strictEqual( react( "ctxtVar4" ), ( y.valueOf() + t.valueOf() ) / 2 * ( ( x.valueOf() + t.valueOf() ) / 2 + 5 ), "react( \"ctxtVar4\" )" );
+	
+	ok( react( "ctxtVar = ", sum ), "update context variable: react( \"ctxtVar = \", function() { var ret = 0, idx = arguments.length; while( idx-- ) ret += arguments[ idx ]; return ret; } )" );
+	strictEqual( react( "ctxtVar2" ), ( x.valueOf() + t.valueOf() ) + 10, "react( \"ctxtVar2\" )" );
+	strictEqual( react( "ctxtVar3" ), ( y.valueOf() + t.valueOf() ) + ( x.valueOf() + t.valueOf() ), "react( \"ctxtVar3\" )" );
+	strictEqual( react( "ctxtVar4" ), ( y.valueOf() + t.valueOf() ) * ( x.valueOf() + t.valueOf() + 5 ), "react( \"ctxtVar4\" )" );
 	
 	react( "delete ctxtVar4; delete ctxtVar3; delete ctxtVar2; delete ctxtVar;" );
 	

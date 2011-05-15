@@ -147,6 +147,7 @@ test( "Context sensitive variables", function() {
 	
 	react( "simonSays = 'I\\'m ' + ", son, " + ' and my father is ' + ", father );
 	ok( true, "react( \"simonSays = 'I\'m ' + \", son, \" + ' and my father is ' + \", father )" );
+	
 	strictEqual( react( "simonSays{ 'Watson' }" ), "I'm Simon Watson and my father is Jack Watson", "react( \"simonSays{ 'Watson' }\" )" );
 	strictEqual( react( "simonSays{ 'Johnson' }" ), "I'm Simon Johnson and my father is Jack Johnson", "react( \"simonSays{ 'Johnson' }\" )" );
 	
@@ -297,6 +298,7 @@ test( "Basic reactive function call", function() {
 	ok( true, "react( \"inReactJS = announce === \", shout, \" ? 'ENCRYPTED MESSAGE' : 'Atlantis is located at 3H4fD5G'\" )" );
 	ok( !react( "announce( inReactJS )" ), "react( \"announce( inReactJS )\" )" );
 	strictEqual( inGlobalJS, "ENCRYPTED MESSAGE", "inGlobalJS" );
+	
 	ok( react( "announce =", whisper ), "react( \"announce =\", whisper )" );
 	strictEqual( inLocalJS, "Atlantis is located at 3H4fD5G", "inLocalJS" );
 	
@@ -370,7 +372,7 @@ test( "Deregistering function call", function() {
 	
 	ok( true, "react( \"rainOnCactus =\", function() { return \"The cactus is still there!\"; } );" );
 	strictEqual( react( "cactus = rainOnCactus()" ), "The cactus is still there!", "react( \"cactus = rainOnCactus()\" )" );
-	ok( react( "~rainOnCactus()" ), "react( \"~rainOnCactus()\" )" );
+	//ok( react( "~rainOnCactus()" ), "react( \"~rainOnCactus()\" )" );
 	strictEqual( react( "cactus" ), "The cactus is still there!", "react( \"cactus\" )" );
 	
 	//swearing example
@@ -380,7 +382,7 @@ test( "Deregistering function call", function() {
 	    };
 	
 	ok( swear, "swear = function( syllable ) { speack += syllable; }" );
-	
+	debugger;
 	ok( react( "dirtyWord = 'DAMN!'" ), "react( \"dirtyWord = 'DAMN!'\" )" );
 	react( swear, "( dirtyWord );", swear, "( dirtyWord )" );
 	strictEqual( swearing, "DAMN!DAMN!", "swearing" );
