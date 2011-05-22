@@ -1,6 +1,6 @@
 /* 
  * 
- * Copyright (c) 2011 Christopher Aue
+ * Copyright (c) 2011 Christopher Aue, http://www.reactjs.com
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,11 +21,6 @@
  * THE SOFTWARE.
  * 
  */
-
-//react.js extends Javascript in the following ways:
-//- Create objects, overload their operators and use them within react().
-//- Save data in variables inside of react() and combine them with operators
-//  without accessing the stored value before evaluation (reactive programming)
 
 ( function( undefined ) {
 	if ( typeof Object.create !== "function" )
@@ -108,12 +103,7 @@
 			//streamlined pratt parser - derived from http://javascript.crockford.com/tdop/tdop.html
 			//expression evaluation directly included into the parse process
 			
-			var dontTrack = false;
-			
-			var DepObj = function(){};
-			DepObj.prototype = {};
-			
-			//token parsing and evaluation
+			//token parsing and operator handling
 			var operators = {},		//table holding defined operators
 
 				itself = function( expr ) {
@@ -130,119 +120,87 @@
 				},
 				
 				opType = {
-					infix : function( s, bp, led ) {
-						s.led = led || function ( expr ) {
-							expr.p in expr.o && ( this.first = expr.o[ expr.p ] );
-							this.ledEval = operators[ this.id ].ledEval;
-							expr.o[ expr.p ] = this;
-							
-							return {
-								o : this,
-								p : "second",
-								rbp : bp,
-								end : null,
-								parent : expr,
-								prevToken : expr.o.id
-							};
-						};
-						return s;
-					},
-					
-					infixr : function( s, bp, led ) {
-						s.led = led || function ( expr ) {
-							expr.p in expr.o && ( this.first = expr.o[ expr.p ] );
-							this.ledEval = operators[ this.id ].ledEval;
-							expr.o[ expr.p ] = this;
-							
-							return {
-								o : this,
-								p : "second",
-								rbp : bp-2,
-								end : null,
-								parent : expr,
-								prevToken : expr.o.id
-							};
-						};
-						return s;
-					},
-
-					prefix : function( s, bp, nud ) {
-						s.nud = nud || function ( expr ) {
+					prefix : function( s, end, bp, nud, cstmNud ) {
+						s.nud = cstmNud ? nud : function ( expr, interpreter ) {
 							this.nudEval = operators[ this.id ].nudEval;
 							expr.o[ expr.p ] = this;
+							
+							nud && nud.call( this, expr, interpreter );
 							
 							return {
 								o : this,
 								p : "first",
-								rbp : bp,
-								end : null,
+								rbp : end ? 0 : bp,
+								end : end || null,
 								parent : expr,
 								prevToken : expr.o.id
 							};
 						};
-						return s;
+						return "prefix";
 					},
 					
-					assignment : function( s, bp, led ) {
-						return opType.infixr( s, bp, led || function ( expr, interpreter ) {
+					infix : function( s, end, bp, led, cstmLed ) {
+						s.led = cstmLed ? led : function ( expr, interpreter ) {
 							expr.p in expr.o && ( this.first = expr.o[ expr.p ] );
-							this.assignment = true;
 							this.ledEval = operators[ this.id ].ledEval;
-							expr.o[ expr.p ] = this; 
+							expr.o[ expr.p ] = this;
 							
+							led && led.call( this, expr, interpreter );
+							
+							return {
+								o : this,
+								p : "second",
+								rbp : end ? 0 : bp,
+								end : end || null,
+								parent : expr,
+								prevToken : expr.o.id
+							};
+						};
+						return "infix";
+					},
+					
+					infixr : function( s, end, bp, led, cstmLed ) {
+						return opType.infix( s, end, bp-2, led, cstmLed );
+					},
+					
+					assignment : function( s, end, bp, led ) {
+						return opType.infixr( s, end, bp, function( expr, interpreter ) {
+							this.assignment = true;
 							if ( this.first && this.first.id === "(id)" )
 								action.assign = interpreter.nameTable.table[ this.first.value ];
 							else if ( this.first instanceof Variable || this.first instanceof PropPath )
 								action.assign = this.first;
-							
-							return {
-								o : this,
-								p : "second",
-								rbp : bp-2,
-								end : null,
-								parent : expr,
-								prevToken : expr.o.id
-							};
-						} );
+						}, false );
 					},
 					
-					"delete" : function( s, bp, nud ) {
-						return opType.prefix( s, bp, nud || function ( expr ) {
+					"delete" : function( s, end, bp, nud ) {
+						return opType.prefix( s, end, bp, function() {
 							this.assignment = true;
-							this.nudEval = operators[ this.id ].nudEval;
-							expr.o[ expr.p ] = this;
-							
-							return {
-								o : this,
-								p : "first",
-								rbp : this.lbp,
-								end : null,
-								parent : expr,
-								prevToken : expr.o.id
-							};
-						} );
+						}, false );
 					},
 					
-					call : function( s, bp, led ) {
-						return opType.infix( s, bp, led || function( expr ) {
-							expr.p in expr.o && ( this.first = expr.o[ expr.p ] );
+					call : function( s, end, bp, led ) {
+						return opType.infix( s, end, bp, function() {
 							this.call = true;
-							this.ledEval = operators[ this.id ].ledEval;
-							expr.o[ expr.p ] = this;
-							
-							return {
-								o : this,
-								p : "second",
-								rbp : 0,
-								end : ")",
-								parent : expr,
-								prevToken : expr.o.id
-							};
-						} );
+						}, false );
 					}
 				},
-			
-				operator = function( id, type, bp, interpret, eval, composed ) {
+				
+				noOpOverload = {
+					"infix=" : true,
+					"infix~=" : true,
+					"prefixdelete" : true,
+					"prefix~delete" : true,
+					"prefixclean" : true,
+					"prefixcleanExcept" : true,
+					"infix," : true,
+					"infix?" : true,
+					"infix:" : true,
+					"prefix#" : true,
+					"prefix~" : true
+				},
+				
+				operator = function( id, end, type, bp, eval, func, cstm ) {
 					var op = operators[ id ],
 						stdFunc;
 					
@@ -251,14 +209,15 @@
 						op = {};
 						op.id = op.value = id;
 						op.lbp = bp;
+						op.end = end;
 						operators[ id ] = op;
 					}
 					
-					if ( type ) 
-						opType[ type ]( op, bp, interpret );
+					if ( type )
+						type = opType[ type ]( op, end, bp, func, cstm );
 					
 					if ( eval ) {
-						if ( type === "prefix" || type === "delete" ) {
+						if ( type === "prefix" ) {
 							id = "prefix"+id;
 							stdFunc = typeof eval === "function" ?
 											eval :
@@ -276,10 +235,10 @@
 												return op.nudEval[ type ].apply( this, arguments );
 											};
 							
-							if ( type === "prefix" )
+							if ( !noOpOverload[ id ] )
 								op.nudEval = function( operand, undef, interpreter ) {
 									//check for overloaded operators
-									if ( operand && !( operand instanceof Variable ) && operand[ id ] )
+									if ( operand && !(operand instanceof Reactive) && operand[ id ] )
 										return operand[ id ].call( operand );
 									
 									//standard operator behavior
@@ -321,10 +280,10 @@
 												return op.ledEval[ typeL ][ typeR ].apply( this, arguments );
 											};
 							
-							if ( type !== "assignment" )
+							if ( !noOpOverload[ id ] )
 								op.ledEval = function( left, right, interpreter ) {
 									//check for overloaded operators
-									if ( left && !(left instanceof Variable) && right && !(right instanceof Variable) ) {
+									if ( left && !(left instanceof Reactive) && right && !(right instanceof Reactive) ) {
 										if ( left[ id ] )
 											return left[ id ].call( left, right );
 										
@@ -346,20 +305,21 @@
 					}
 					
 					return op;
-				};
+				},
+				
+				opTypes = [ "lit", "ref", "arr" ];
 			
 			//define operators
-			var opTypes = [ "lit", "ref", "arr" ];
 			operator( ";" );
 			operator( ")" );		
 			operator( "]" );
 			operator( "}" );
 			
-			operator( "clean", "prefix", 0, null, function( undef, interpreter ) {
+			operator( "clean", null, "prefix", 0, function( undef, interpreter ) {
 				return interpreter.nameTable.clean();
 			} );
 			
-			operator( "cleanExcept", "prefix", 4, null, function( vars, interpreter ) {
+			operator( "cleanExcept", null, "prefix", 4, function( vars, interpreter ) {
 				if ( vars === undefined )
 					return interpreter.nameTable.clean();
 				
@@ -382,58 +342,57 @@
 				return interpreter.nameTable.clean( varObj );
 			} );
 			
-			operator( ",", "infix", 5, null, ( function() {
-					var ret = {},
-						func = function( left, right ) {
-							return Expression( ",", [ left, right ] );
-						},
-						funcArr = function( left, right ) {
+			operator( ",", null, "infix", 5, ( function() {
+				var ret = {},
+					func = function( left, right ) {
+						return Expression( ",", [ left, right ] );
+					},
+					funcArr = function( left, right ) {
+						if ( right instanceof Expression && right._value.op === "," ) {
+							right.unshift( left );
+							
+							return right;
+						}
+						
+						return Expression( ",", [ left, right ] );
+					},
+					arrFunc = function( left, right ) {
+						if ( left._value.op === "," ) {
 							if ( right instanceof Expression && right._value.op === "," ) {
-								right.unshift( left );
-								
-								return right;
+								right.splice( 0, 0, left._value.length, 0 );
+								left.splice.apply( left, right );
+							} else {
+								left.push( right );
 							}
 							
-							return Expression( ",", [ left, right ] );
-						},
-						arrFunc = function( left, right ) {
-							if ( left._value.op === "," ) {
-								if ( right instanceof Expression && right._value.op === "," ) {
-									right.splice( 0, 0, left._value.length, 0 );
-									left.splice.apply( left, right );
-								} else {
-									left.push( right );
-								}
-								
-								return left;
+							return left;
+						
+						} else if ( right instanceof Expression && right._value.op === "," ) {
+							right.unshift( left );
 							
-							} else if ( right instanceof Expression && right._value.op === "," ) {
-								right.unshift( left );
-								
-								return right;
-							}
-							
-							return Expression( ",", [ left, right ] );
-						};
-					
-					each( [ "lit", "ref" ], function( idxL, typeL ) {
-						ret[ typeL ] = {};
-						each( [ "lit", "ref" ], function( idxR, typeR ) {
-							ret[ typeL ][ typeR ] = func;
-						} );
-						ret[ typeL ].arr = funcArr;
+							return right;
+						}
+						
+						return Expression( ",", [ left, right ] );
+					};
+				
+				each( [ "lit", "ref" ], function( idxL, typeL ) {
+					ret[ typeL ] = {};
+					each( [ "lit", "ref" ], function( idxR, typeR ) {
+						ret[ typeL ][ typeR ] = func;
 					} );
-					
-					ret.arr = {};
-					each( [ "lit", "ref", "arr" ], function( idx, type ) {
-						ret.arr[ type ] = arrFunc;
-					} );
-					
-					return ret;
-				}() )
-			);
+					ret[ typeL ].arr = funcArr;
+				} );
+				
+				ret.arr = {};
+				each( opTypes, function( idx, type ) {
+					ret.arr[ type ] = arrFunc;
+				} );
+				
+				return ret;
+			}() ) );
 			
-			operator( "=", "assignment", 10, null, function( v, val, interpreter ) {
+			operator( "=", null, "assignment", 10, function( v, val, interpreter ) {
 				var isPropAccess = v instanceof Expression && v._value.op === ".",
 					isVar  = !isPropAccess && v instanceof Variable,
 					isPath = !isVar && v instanceof PropPath;
@@ -451,103 +410,99 @@
 				return interpreter.nameTable.set( v._key || v.value, val );
 			} );
 			
-			operator( "(op=)", "infixr", 10, function( expr, interpreter ) {
-					var op, token;
-					
-					op = operators[ "=" ];
-					token = {
-						nud 	: op.nud || nudUndef,
-						led 	: op.led || ledUndef,
-						ledEval : op.ledEval,
-						lbp 	: op.lbp,
-						value 	: "=",
-						id 		: "=",
-						arity 	: "operator"
-					};
-					expr = token.led( expr, interpreter );
-					"first" in expr.o && ( expr.o.second = expr.o.first );
-					
+			operator( "(op=)", null, "infixr", 10, null, function( expr, interpreter ) {
+				var op, token;
+				
+				op = operators[ "=" ];
+				token = {
+					nud 	: op.nud || nudUndef,
+					led 	: op.led || ledUndef,
+					ledEval : op.ledEval,
+					lbp 	: op.lbp,
+					value 	: "=",
+					id 		: "=",
+					arity 	: "operator"
+				};
+				expr = token.led( expr, interpreter );
+				"first" in expr.o && ( expr.o.second = expr.o.first );
+				
+				op = operators[ this.value ];
+				token = {
+					nud 	: op.nud || nudUndef,
+					led 	: op.led || ledUndef,
+					ledEval : op.ledEval,
+					lbp 	: op.lbp,
+					value 	: this.value,
+					id 		: this.value,
+					arity 	: "operator"
+				};
+				expr = token.led( expr, interpreter );
+				
+				op = operators[ "(" ];
+				token = {
+					nud 	: op.nud || nudUndef,
+					led 	: op.led || ledUndef,
+					nudEval : op.nudEval,
+					lbp 	: op.lbp,
+					value 	: "(",
+					id 		: "(",
+					arity 	: "operator"
+				};
+				expr = token.nud( expr, interpreter );
+				expr.end = expr.parent.end;
+				expr.rbp = 10;
+				
+				return expr;
+			}, true );
+			
+			operator( "(op=)", null, "prefix", 10, null, function( expr, interpreter ) {
+				var op, token;
+				
+				if ( this.value === "(" ) {
 					op = operators[ this.value ];
-					token = {
-						nud 	: op.nud || nudUndef,
-						led 	: op.led || ledUndef,
-						ledEval : op.ledEval,
-						lbp 	: op.lbp,
-						value 	: this.value,
-						id 		: this.value,
-						arity 	: "operator"
-					};
-					expr = token.led( expr, interpreter );
-					
-					op = operators[ "(" ];
 					token = {
 						nud 	: op.nud || nudUndef,
 						led 	: op.led || ledUndef,
 						nudEval : op.nudEval,
 						lbp 	: op.lbp,
-						value 	: "(",
-						id 		: "(",
+						value 	: this.value,
+						id 		: this.value,
 						arity 	: "operator"
 					};
 					expr = token.nud( expr, interpreter );
-					expr.end = expr.parent.end;
-					expr.rbp = 10;
-					
-					return expr;
-				},
-				null
-			);
-			
-			operator( "(op=)", "prefix", 10, function( expr, interpreter ) {
-					var op, token;
-					
-					if ( this.value === "(" ) {
-						op = operators[ this.value ];
-						token = {
-							nud 	: op.nud || nudUndef,
-							led 	: op.led || ledUndef,
-							nudEval : op.nudEval,
-							lbp 	: op.lbp,
-							value 	: this.value,
-							id 		: this.value,
-							arity 	: "operator"
-						};
-						expr = token.nud( expr, interpreter );
-					}
-					
-					op = operators[ "=" ];
+				}
+				
+				op = operators[ "=" ];
+				token = {
+					nud 	: op.nud || nudUndef,
+					led 	: op.led || ledUndef,
+					ledEval : op.ledEval,
+					lbp 	: op.lbp,
+					value 	: "=",
+					id 		: "=",
+					arity 	: "operator"
+				};
+				expr = token.led( expr, interpreter );
+				"first" in expr.o && ( expr.o.second = expr.o.first );
+				
+				if ( this.value !== "(" ) {
+					op = operators[ this.value ];
 					token = {
 						nud 	: op.nud || nudUndef,
 						led 	: op.led || ledUndef,
-						ledEval : op.ledEval,
+						nudEval : op.nudEval,
 						lbp 	: op.lbp,
-						value 	: "=",
-						id 		: "=",
+						value 	: this.value,
+						id 		: this.value,
 						arity 	: "operator"
 					};
-					expr = token.led( expr, interpreter );
-					"first" in expr.o && ( expr.o.second = expr.o.first );
-					
-					if ( this.value !== "(" ) {
-						op = operators[ this.value ];
-						token = {
-							nud 	: op.nud || nudUndef,
-							led 	: op.led || ledUndef,
-							nudEval : op.nudEval,
-							lbp 	: op.lbp,
-							value 	: this.value,
-							id 		: this.value,
-							arity 	: "operator"
-						};
-						expr = token.nud( expr, interpreter );
-					}
-					
-					return expr;
-				},
-				null
-			);
+					expr = token.nud( expr, interpreter );
+				}
+				
+				return expr;
+			}, true );
 			
-			operator( "~=", "assignment", 10, null, function( path, val ) {
+			operator( "~=", null, "assignment", 10, function( path, val ) {
 				var isPath = path instanceof PropPath,
 					isPropAccess = !isPath && path instanceof Expression && path._value.op === ".";
 				
@@ -560,7 +515,7 @@
 					return path.set( true, val, false );
 			} );
 			
-			operator( "?", "infix", 20, null, ( function() {
+			operator( "?", null, "infix", 20, ( function() {
 					var ret = {};
 					
 					//choice is always an array
@@ -579,16 +534,16 @@
 				}() )
 			);
 			
-			operator( ":", "infixr", 21, null, ( function() {
+			operator( ":", null, "infixr", 21, ( function() {
 					var ret = {},
 						
 						func = function( onTrue, onFalse ) {
 							return Expression( ":", [ onTrue, onFalse ] );
 						};
 					
-					each( [ "lit", "ref", "arr" ], function( idxL, typeL ) {
+					each( opTypes, function( idxL, typeL ) {
 						ret[ typeL ] = {};
-						each( [ "lit", "ref", "arr" ], function( idxR, typeR ) {
+						each( opTypes, function( idxR, typeR ) {
 							ret[ typeL ][ typeR ] = func;
 						} );
 					} );
@@ -637,7 +592,7 @@
 					}
 				},
 				function( op, opProps ) {
-					operator( op, "infixr", opProps.bp, null, ( function() {
+					operator( op, null, "infixr", opProps.bp, ( function() {
 						var ret = {},
 							
 							compare = function( left, right ) {
@@ -669,9 +624,9 @@
 								}
 							};
 						
-						each( [ "lit", "ref", "arr" ], function( idxL, typeL ) {
+						each( opTypes, function( idxL, typeL ) {
 							ret[ typeL ] = {};
-							each( [ "lit", "ref", "arr" ], function( idxR, typeR ) {
+							each( opTypes, function( idxR, typeR ) {
 								if ( opProps[ typeL + typeR ] )
 									ret[ typeL ][ typeR ] = opProps[ typeL + typeR ];
 								
@@ -716,12 +671,12 @@
 					}
 				},
 				function( op, opProps ) {
-					operator( op, "infixr", opProps.bp, null, ( function() {
+					operator( op, null, "infixr", opProps.bp, ( function() {
 						var ret = {};
 						
-						each( [ "lit", "ref", "arr" ], function( idxL, typeL ) {
+						each( opTypes, function( idxL, typeL ) {
 							ret[ typeL ] = {};
-							each( [ "lit", "ref", "arr" ], function( idxR, typeR ) {
+							each( opTypes, function( idxR, typeR ) {
 								ret[ typeL ][ typeR ] = opProps[ typeL + typeR ] || function( left, right ) {
 									return Expression( op, [ left, right ] );
 								};
@@ -733,21 +688,21 @@
 				}
 			);
 			
-			operator( "!=", "infixr", 40, null, function( left, right ) {
+			operator( "!=", null, "infixr", 40, function( left, right ) {
 				return operators[ "!" ].nudEval.call( this, operators[ "==" ].ledEval.call( this, left, right ) );
-			}, true );
+			} );
 			
-			operator( "!==", "infixr", 40, null, function( left, right ) {
+			operator( "!==", null, "infixr", 40, function( left, right ) {
 				return operators[ "!" ].nudEval.call( this, operators[ "===" ].ledEval.call( this, left, right ) );
-			}, true );
+			} );
 			
-			operator( "<=", "infixr", 50, null, function( left, right ) {
+			operator( "<=", null, "infixr", 50, function( left, right ) {
 				return operators[ "||" ].ledEval.call( this, operators[ "<" ].ledEval.call( this, left, right ), operators[ "==" ].ledEval.call( this, left, right ) );
-			}, true );
+			} );
 			
-			operator( ">=", "infixr", 50, null, function( left, right ) {
+			operator( ">=", null, "infixr", 50, function( left, right ) {
 				return operators[ "||" ].ledEval.call( this, operators[ ">" ].ledEval.call( this, left, right ), operators[ "==" ].ledEval.call( this, left, right ) );
-			}, true );
+			} );
 			
 			each(
 				{
@@ -759,16 +714,16 @@
 					}
 				},
 				function( op, litlit ) {
-					operator( op, "infixr", 50, null, ( function() {
+					operator( op, null, "infixr", 50, ( function() {
 						var ret = {},
 							
 							func = function( left, right ) {
 								return Expression( op, [ left, right ] );
 							};
 						
-						each( [ "lit", "ref", "arr" ], function( idxL, typeL ) {
+						each( opTypes, function( idxL, typeL ) {
 							ret[ typeL ] = {};
-							each( [ "lit", "ref", "arr" ], function( idxR, typeR ) {
+							each( opTypes, function( idxR, typeR ) {
 								ret[ typeL ][ typeR ] = func;
 							} );
 						} );
@@ -780,7 +735,7 @@
 				}
 			);
 			
-			operator( "+", "infix", 60, null, ( function() {
+			operator( "+", null, "infix", 60, ( function() {
 				var ret = {},
 					
 					factorOut = function( fst, snd ) {
@@ -1154,11 +1109,11 @@
 				return ret;
 			}() ) );
 			
-			operator( "-", "infix", 60, null, function( left, right ) {		// left + (-1)*right
+			operator( "-", null, "infix", 60, function( left, right ) {		// left + (-1)*right
 				return operators[ "+" ].ledEval.call( this, left, operators[ "*" ].ledEval.call( this, -1, right ) );
-			}, true );
+			} );
 			
-			operator( "*", "infix", 70, null, ( function() {
+			operator( "*", null, "infix", 70, ( function() {
 				var ret = {},
 					
 					factorOutPowers = function( fst, snd ) {
@@ -1369,11 +1324,11 @@
 				return ret;
 			}() ) );
 			
-			operator( "/", "infix", 70, null, function( left, right ) {		// left * right^(-1)
+			operator( "/", null, "infix", 70, function( left, right ) {		// left * right^(-1)
 				return operators[ "*" ].ledEval.call( this, left, operators[ "^" ].ledEval.call( this, right, -1 ) );
-			}, true );
+			} );
 			
-			operator( "%", "infix", 70, null, ( function() {
+			operator( "%", null, "infix", 70, ( function() {
 				var ret = {},
 					
 					mod = function( left, right ) {
@@ -1409,9 +1364,9 @@
 						return Expression( "%", [ left, right ] );
 					};
 				
-				each( [ "lit", "ref", "arr" ], function( idxL, typeL ) {
+				each( opTypes, function( idxL, typeL ) {
 					ret[ typeL ] = {};
-					each( [ "lit", "ref", "arr" ], function( idxR, typeR ) {
+					each( opTypes, function( idxR, typeR ) {
 						ret[ typeL ][ typeR ] = mod;
 					} );
 				} );
@@ -1423,7 +1378,7 @@
 				return ret;
 			}() ) );
 			
-			operator( "^", "infixr", 80, null, ( function() {
+			operator( "^", null, "infixr", 80, ( function() {
 				var ret = {},
 					
 					pow = function( base, exp ) {
@@ -1456,9 +1411,9 @@
 						return Expression( "^", [ base, exp ] );
 					};
 				
-				each( [ "lit", "ref", "arr" ], function( idxB, typeB ) {
+				each( opTypes, function( idxB, typeB ) {
 					ret[ typeB ] = {};
-					each( [ "lit", "ref", "arr" ], function( idxE, typeE ) {
+					each( opTypes, function( idxE, typeE ) {
 						ret[ typeB ][ typeE ] = pow;
 					} );
 				} );
@@ -1470,7 +1425,7 @@
 				return ret;
 			}() ) );
 			
-			operator( "!", "prefix", 90, null, {
+			operator( "!", null, "prefix", 90, {
 				lit : function( lit ) {
 					return !lit;
 				},
@@ -1487,7 +1442,7 @@
 				}
 			} );
 			
-			operator( "+", "prefix", 90, null, {
+			operator( "+", null, "prefix", 90, {
 				lit : function( lit ) {
 					return +lit;
 				},
@@ -1504,11 +1459,11 @@
 				}
 			} );
 			
-			operator( "-", "prefix", 90, null, function( operand ) {	//-1 * operand
+			operator( "-", null, "prefix", 90, function( operand ) {	//-1 * operand
 				return operators[ "*" ].ledEval.call( this, -1, operand );
-			}, true );
+			} );
 			
-			operator( "typeof", "prefix", 90, null, {
+			operator( "typeof", null, "prefix", 90, {
 				lit : function( lit ) {
 					return typeof lit;
 				},
@@ -1525,7 +1480,7 @@
 				}
 			} );
 			
-			operator( "delete", "delete", 90, null, function( v, interpreter ) {
+			operator( "delete", null, "delete", 90, function( v, interpreter ) {
 				var isExpr = v instanceof Expression && v._value,
 					isPropAccess = isExpr && v._value.op === ".",
 					isVar  = !isExpr && v instanceof Variable && v._value,
@@ -1544,7 +1499,7 @@
 				return interpreter.nameTable.remove( v._key || v.value );
 			} );
 			
-			operator( "~delete", "delete", 90, null, function( path ) {
+			operator( "~delete", null, "delete", 90, function( path ) {
 				var isPath = path instanceof PropPath,
 					isPropAccess = !isPath && path instanceof Expression && path._value.op === ".";
 				
@@ -1557,100 +1512,62 @@
 					return !!path.set( true, undefined, true );
 			} );
 			
-			operator( "~", "prefix", 90, function ( expr ) {
-					this.nudEval = operators[ this.id ].nudEval;
-					expr.o[ expr.p ] = this;
-					
-					action.deregister = true;
-					
-					return {
-						o : this,
-						p : "first",
-						rbp : this.lbp,
-						end : null,
-						parent : expr,
-						prevToken : expr.o.id
-					};
-				},
-				function( v ) {
+			operator( "~", null, "prefix", 90, function( v ) {
 					if ( !v || !(v instanceof PropPath) && !(v instanceof FunctionCall) )
 						error( "Bad lvalue: no reactive object property or function call." );
 					
 					action.deregister = false;
 					
 					return v.remove();
-				}
+				}, 
+				function () {
+					action.deregister = true;
+				},
+				false
 			);
 			
-			operator( "#", "prefix", 90, function ( expr ) {
-					this.nudEval = operators[ this.id ].nudEval;
-					expr.o[ expr.p ] = this;
-					
-					action.evaluate = true;
-					
-					return {
-						o : this,
-						p : "first",
-						rbp : this.lbp,
-						end : null,
-						parent : expr,
-						prevToken : expr.o.id
-					};
-				},
-				function( v ) {
+			operator( "#", null, "prefix", 90, function( v ) {
 					action.evaluate = false;
 					return v;
-				}
-			);
-			
-			operator( "{", "infix", 100, function( expr ) {
-					this.first = expr.o[ expr.p ];
-					//this.second = undefined;
-					this.ledEval = operators[ "{" ].ledEval;
-					expr.o[ expr.p ] = this;
-					
-					return {
-						o : this,
-						p : "second",
-						rbp : 0,
-						end : "}",
-						parent : expr,
-						prevToken : expr.o.id
-					};
 				},
-				function( v, ctxt ) {
-					var idx;
-					
-					if ( !(v instanceof Variable) && !(v instanceof Expression) && !v._isFunc )
-						error( "{ must be preceeded by a variable, expression or function!" );
-					
-					if ( ctxt instanceof Expression && ctxt._value.op === "," ) {
-						idx = ctxt._value.length;
-						while( idx-- ) {
-							if ( ctxt._value[ idx ] instanceof Expression || ctxt._value[ idx ] instanceof FunctionCall || ctxt._value[ idx ] instanceof PropPath )
-								error( "context data must be a literal or variable!" );
-						}
-						
-						if ( v._isFunc )
-							return v.apply( null, ctxt.valueOf()._value.value );
-						
-					} else if ( ctxt instanceof Expression || ctxt instanceof FunctionCall || ctxt instanceof PropPath ) {
-						error( "context data must be a literal or variable!" );
-					}
-					
-					if ( ctxt ) {
-						if ( v._isFunc ) {
-							v = v( ctxt.valueOf() );
-						} else {
-							v = v.inCtxt( ctxt );
-						}
-					}
-					
-					return v;
-				}
+				function ( expr ) {
+					action.evaluate = true;
+				},
+				false
 			);
 			
-			operator( "(", "call", 100, null, function( func, args ) {
+			operator( "{", "}", "infix", 100, function( v, ctxt ) {
+				var idx;
+				
+				if ( !(v instanceof Variable) && !(v instanceof Expression) && !v._isFunc )
+					error( "{ must be preceeded by a variable, expression or function!" );
+				
+				if ( ctxt instanceof Expression && ctxt._value.op === "," ) {
+					idx = ctxt._value.length;
+					while( idx-- ) {
+						if ( ctxt._value[ idx ] instanceof Expression || ctxt._value[ idx ] instanceof FunctionCall || ctxt._value[ idx ] instanceof PropPath )
+							error( "context data must be a literal or variable!" );
+					}
+					
+					if ( v._isFunc )
+						return v.apply( null, ctxt.valueOf()._value.value );
+					
+				} else if ( ctxt instanceof Expression || ctxt instanceof FunctionCall || ctxt instanceof PropPath ) {
+					error( "context data must be a literal or variable!" );
+				}
+				
+				if ( ctxt ) {
+					if ( v._isFunc ) {
+						v = v( ctxt.valueOf() );
+					} else {
+						v = v.inCtxt( ctxt );
+					}
+				}
+				
+				return v;
+			} );
+			
+			operator( "(", ")", "call", 100, function( func, args ) {
 				var call, funcIsLit, argsAreLits;
 				
 				//prepare function
@@ -1697,7 +1614,7 @@
 				return call;
 			} );
 			
-			operator( ":(", "call", 100, null, function( func, args ) {
+			operator( ":(", ")", "call", 100, function( func, args ) {
 				var funcIsLit, argsAreLits;
 				
 				//prepare function
@@ -1839,60 +1756,13 @@
 				}
 			};
 			
-			operator( ".", "infix", 110, function( expr ) {
-					this.first = expr.o[ expr.p ];
-					//this.second = undefined;
-					this.dotPropAccess = true;
-					this.ledEval = operators[ "." ].ledEval;
-					expr.o[ expr.p ] = this;
-					
-					return {
-						o : this,
-						p : "second",
-						rbp : this.lbp,
-						end : null,
-						parent : expr,
-						prevToken : expr.o.id
-					};
-				},
-				objPropEval
-			);
+			operator( ".", null, "infix", 110, objPropEval, function( expr ) {
+				this.dotPropAccess = true;
+			}, false );
 			
-			operator( "[", "infix", 110, function( expr ) {
-					this.first = expr.o[ expr.p ];
-					//this.second = undefined;
-					this.ledEval = operators[ "[" ].ledEval;
-					expr.o[ expr.p ] = this;
-					
-					return {
-						o : this,
-						p : "second",
-						rbp : 0,
-						end : "]",
-						parent : expr,
-						prevToken : expr.o.id
-					};
-				},
-				objPropEval
-			);
+			operator( "[", "]", "infix", 110, objPropEval );
 			
-			operator( "(", "prefix", 120, function( expr ) {
-					//this.first = undefined;
-					this.nudEval = operators[ "(" ].nudEval;
-					expr.o[ expr.p ] = this;
-					
-					return {
-						o : this,
-						p : "first",
-						rbp : 0,
-						end : ")",
-						parent : expr
-					};
-				},
-				function( content ) {
-					return content;
-				}
-			);
+			operator( "(", ")", "prefix", 120, function( content ) { return content; } );
 			
 			//interpret function
 			var action = {
@@ -2408,7 +2278,11 @@
 					return ret.value;
 				};
 			
-			var Reactive = function( proto ) {
+			//reactive objects
+			var Reactive, Variable, Expression, Context, FunctionCall, PropPath;
+			
+			//base object
+			Reactive = function( proto ) {
 					var r = Object.create( Reactive.prototype );
 					
 					if ( !proto )
@@ -2421,41 +2295,6 @@
 					return r;
 				};
 			
-			var linkId = function( id, rmvList ) {
-					if ( !this._value.hasOwnProperty( id ) )
-						return;
-					
-					if ( !(this._value[ id ] instanceof Reactive) )
-						return;
-					
-					this._value[ id ]._partOf[ this._guid ] = this;
-					rmvList && delete rmvList[ this._value[ id ]._guid ];
-					
-					if ( this._value[ id ] instanceof Expression )
-						this._value[ id ].link( undefined, rmvList );
-				},
-				unlinkId = function( id, rmvList ) {
-					if ( !this._value.hasOwnProperty( id ) )
-						return;
-					
-					if ( !(this._value[ id ] instanceof Reactive) )
-						return;
-					
-					this._value[ id ]._partOf && delete this._value[ id ]._partOf[ this._guid ];
-					
-					if ( this._value[ id ] instanceof Expression )
-						this._value[ id ].unlink( undefined, rmvList );
-					else if ( this._value[ id ] instanceof Context )
-						rmvList ? (rmvList[ this._value[ id ]._guid ] = this._value[ id ]) : this._value[ id ].remove();
-					else if ( this._value[ id ] instanceof PropPath &&
-							  isEmptyObj( this._value[ id ]._partOf ) &&
-							  !("value" in this._value[ id ]._value) )
-						rmvList ? (rmvList[ this._value[ id ]._guid ] = this._value[ id ]) : this._value[ id ].remove();
-					else if ( this._value[ id ] instanceof FunctionCall &&
-							  isEmptyObj( this._value[ id ]._partOf ) )
-						rmvList ? (rmvList[ this._value[ id ]._guid ] = this._value[ id ]) : this._value[ id ].remove();
-				};
-			
 			Reactive.prototype = {
 				_guid : 0,
 				
@@ -2463,26 +2302,66 @@
 				_value  : null,
 				_evaled : null,
 				
-				link : function( id, rmvList ) {
-					if ( this instanceof Expression )
-						this._linked = true;
+				link : ( function() {
+					var linkId = function( id, rmvList ) {
+						if ( !this._value.hasOwnProperty( id ) )
+							return;
+						
+						if ( !(this._value[ id ] instanceof Reactive) )
+							return;
+						
+						this._value[ id ]._partOf[ this._guid ] = this;
+						rmvList && delete rmvList[ this._value[ id ]._guid ];
+						
+						if ( this._value[ id ] instanceof Expression )
+							this._value[ id ].link( undefined, rmvList );
+					};
 					
-					if ( id )
-						return linkId.call( this, id, rmvList );
+					return function( id, rmvList ) {
+						if ( this instanceof Expression )
+							this._linked = true;
+						
+						if ( id )
+							return linkId.call( this, id, rmvList );
+						
+						for ( id in this._value )
+							linkId.call( this, id, rmvList );
+					};
+				}() ),
+				unlink : ( function() {
+					var unlinkId = function( id, rmvList ) {
+						if ( !this._value.hasOwnProperty( id ) )
+							return;
+						
+						if ( !(this._value[ id ] instanceof Reactive) )
+							return;
+						
+						this._value[ id ]._partOf && delete this._value[ id ]._partOf[ this._guid ];
+						
+						if ( this._value[ id ] instanceof Expression )
+							this._value[ id ].unlink( undefined, rmvList );
+						else if ( this._value[ id ] instanceof Context )
+							rmvList ? (rmvList[ this._value[ id ]._guid ] = this._value[ id ]) : this._value[ id ].remove();
+						else if ( this._value[ id ] instanceof PropPath &&
+								  isEmptyObj( this._value[ id ]._partOf ) &&
+								  !("value" in this._value[ id ]._value) )
+							rmvList ? (rmvList[ this._value[ id ]._guid ] = this._value[ id ]) : this._value[ id ].remove();
+						else if ( this._value[ id ] instanceof FunctionCall &&
+								  isEmptyObj( this._value[ id ]._partOf ) )
+							rmvList ? (rmvList[ this._value[ id ]._guid ] = this._value[ id ]) : this._value[ id ].remove();
+					};
 					
-					for ( id in this._value )
-						linkId.call( this, id, rmvList );
-				},
-				unlink : function( id, rmvList ) {
-					if ( id )
-						return unlinkId.call( this, id, rmvList );
-					
-					if ( this instanceof Expression )
-						delete this._linked;
-					
-					for ( id in this._value )
-						unlinkId.call( this, id, rmvList );
-				},
+					return function( id, rmvList ) {
+						if ( id )
+							return unlinkId.call( this, id, rmvList );
+						
+						if ( this instanceof Expression )
+							delete this._linked;
+						
+						for ( id in this._value )
+							unlinkId.call( this, id, rmvList );
+					}
+				}() ),
 				remove : function() {
 					this.unlink();
 					delete this._guid;
@@ -2494,57 +2373,8 @@
 				}
 			};
 			
-			var Context = function( r, ctxt ) {
-				var v = this instanceof Context ? this : Object.create( Context.prototype );
-				
-				v._guid	  = Reactive.prototype._guid++;
-				v._partOf = {};
-				v._evaled = {};
-				v._value  = {
-					value : r,
-					context : ctxt
-				};
-				
-				!dontTrack && v.link();
-				
-				return v;
-			};
-			
-			Context.prototype = Reactive( {
-				valueOf : function() {
-					if ( "value" in this._evaled )
-						return this._evaled.value;
-					
-					if ( !("context" in this._evaled) ) {
-						if ( this._value.context instanceof Expression && this._value.context._value.op === "," )
-							this._evaled.context = this._value.context.valueOf()._value;
-						else
-							this._evaled.context = this._value.context.valueOf();
-					}
-					
-					return this._evaled.value = this._value.value.valueOf[ this._evaled.context instanceof Array ? "apply" : "call" ]( this._value.value, this._evaled.context );
-				},
-				toString : function() {
-					if ( "string" in this._evaled )
-						return this._evaled.string;
-					
-					return this._evaled.string = "( " + String( this._value.value ) + " ){ " + String( this._value.context ) + " }";
-				},
-				
-				invalidate : function() {
-					delete this._evaled.value;
-					delete this._evaled.string;
-					delete this._evaled.context;
-					
-					for ( var id in this._partOf )
-						this._partOf[ id ].invalidate( this );
-					
-					return this;
-				}
-			} );
-			
-			//Variable creation and properties
-			var Variable = function( key, val, isConst ) {
+			//variables
+			Variable = function( key, val, isConst ) {
 					var v = this instanceof Variable ? this : Object.create( Variable.prototype );
 					
 					v._guid	  = Reactive.prototype._guid++;
@@ -2603,7 +2433,8 @@
 				},
 				toString : function() {
 					var value  = this._value.value,
-						evaled = this._evaled;
+						evaled = this._evaled,
+						type;
 					
 					try {
 						if ( "string" in evaled ) 
@@ -2611,8 +2442,12 @@
 						
 						evaled.string = this._isNamed ? this._key + " = " : "";
 						
-						if ( typeof value === "function" )
+						type = typeof value;
+						
+						if ( type === "function" )
 							evaled.string += "function(){...}";
+						else if ( type === "string" )
+							evaled.string += "\"" + value + "\"";
 						else if ( value && value.toString )
 							evaled.string += value.toString();
 						else
@@ -2668,6 +2503,9 @@
 						this._value.value = oldVal;
 						!dontTrack && this.link( undefined, rmvList );
 						
+						if ( val instanceof PropPath )
+							val.remove();
+						
 						throw( e );
 					}
 					
@@ -2692,7 +2530,7 @@
 			} );
 			
 			//expressions
-			var Expression = function( op, array ) {
+			Expression = function( op, array ) {
 				var v = this instanceof Expression ? this : Object.create( Expression.prototype );
 				
 				v._guid	  = Reactive.prototype._guid++;
@@ -2788,19 +2626,13 @@
 							
 							} else if ( value[ idx ] instanceof Expression ) {
 								//replace + with - in case of negative number and summation
-								if ( op === "+" && value[ idx ]._value.op === "*" && value[ idx ]._value[ 0 ] < 0 ) {
+								if ( op === "+" && value[ idx ]._value.op === "*" && value[ idx ]._value[ 0 ] < 0 )
 									str = str.slice( 0, -op.length );
-								}
 								
 								if ( operators[ op ].lbp > operators[ value[ idx ]._value.op ].lbp )
 									str += "(";
 								
-								if ( typeof value[ idx ] === "function" )
-									str += "function(){...}";
-								else if ( value[ idx ] && value[ idx ].toString )
-									str += value[ idx ].toString();
-								else
-									str += String( value[ idx ] );
+								str += value[ idx ].toString();
 								
 								if ( operators[ op ].lbp > operators[ value[ idx ]._value.op ].lbp )
 									str += ")";
@@ -2837,23 +2669,13 @@
 									str += ")";
 							}
 							
-							if ( idx > 0 ) {
-								if ( op === "(" )
-									str += " ) ";
-								else if ( op === "[" )
-									str += " ] ";
-								else if ( op === "{" )
-									str += " } ";
-							}
+							if ( idx > 0 && operators[ op ].end )
+								str += operators[ op ].end;
 							
 							if ( idx < len-1 ) {
-								if ( op !== "." )
-									str += " ";
-								
+								op !== "." && ( str += " " );
 								str += op;
-								
-								if ( op !== "." )
-									str += " ";
+								op !== "." && ( str += " " );
 							}
 						}
 						
@@ -2939,8 +2761,58 @@
 				}
 			} );
 			
+			//context variables and expressions
+			Context = function( r, ctxt ) {
+				var v = this instanceof Context ? this : Object.create( Context.prototype );
+				
+				v._guid	  = Reactive.prototype._guid++;
+				v._partOf = {};
+				v._evaled = {};
+				v._value  = {
+					value : r,
+					context : ctxt
+				};
+				
+				!dontTrack && v.link();
+				
+				return v;
+			};
+			
+			Context.prototype = Reactive( {
+				valueOf : function() {
+					if ( "value" in this._evaled )
+						return this._evaled.value;
+					
+					if ( !("context" in this._evaled) ) {
+						if ( this._value.context instanceof Expression && this._value.context._value.op === "," )
+							this._evaled.context = this._value.context.valueOf()._value;
+						else
+							this._evaled.context = this._value.context.valueOf();
+					}
+					
+					return this._evaled.value = this._value.value.valueOf[ this._evaled.context instanceof Array ? "apply" : "call" ]( this._value.value, this._evaled.context );
+				},
+				toString : function() {
+					if ( "string" in this._evaled )
+						return this._evaled.string;
+					
+					return this._evaled.string = "( " + String( this._value.value ) + " ){ " + String( this._value.context ) + " }";
+				},
+				
+				invalidate : function() {
+					delete this._evaled.value;
+					delete this._evaled.string;
+					delete this._evaled.context;
+					
+					for ( var id in this._partOf )
+						this._partOf[ id ].invalidate( this );
+					
+					return this;
+				}
+			} );
+			
 			//function calls
-			var FunctionCall = function( func, args, evalArgs ) {
+			FunctionCall = function( func, args, evalArgs ) {
 					var idx, c;
 					
 					//look if function call has already been registered
@@ -3111,7 +2983,8 @@
 				}
 			} );
 			
-			var PropPath = function( path, rev, val, del ) {
+			//object property paths
+			PropPath = function( path, rev, val, del ) {
 				var p = this instanceof PropPath ? this : Object.create( PropPath.prototype );
 				
 				p._guid = Reactive.prototype._guid++;
@@ -3142,6 +3015,51 @@
 			PropPath.prototype = Reactive( {
 				_paths : {},
 				
+				_revVals : {},
+				_revGuid : 0,
+				_getRevVal : function( ctxt, prop ) {
+					var id, revObj;
+					
+					for ( id in this._revVals ) {
+						if ( this._revVals[ id ].obj === ctxt ) {
+							revObj = this._revVals[ id ];
+							break;
+						}
+					}
+					
+					if ( !revObj ) {
+						revObj = { 
+							obj : ctxt,
+							props : {},
+							guid : this._revGuid++
+						};
+						this._revVals[ revObj.guid ] = revObj;
+					}
+					
+					if ( !(prop in revObj.props) )
+						revObj.props[ prop ] = {
+							val : ctxt[ prop ],
+							del : prop in ctxt ? false : true,
+							use : 1,
+							obj : revObj,
+						};
+					else
+						revObj.props[ prop ].use += 1;
+					
+					return revObj.props[ prop ];
+				},
+				_revRevVal : function( backup, ctxt, prop ) {
+					backup.use -= 1;
+					if ( !backup.use ) {
+						if ( backup.del )
+							delete ctxt[ prop ];
+						else
+							ctxt[ prop ] = backup.val;
+						
+						delete this._revVals[ backup.obj.guid ];
+					}
+				},
+				
 				_search : function( path ) {
 					for ( var id in PropPath.prototype._paths )
 						if ( equiv( path, PropPath.prototype._paths[ id ]._value.path._value ) )
@@ -3154,7 +3072,15 @@
 					return this._evaled.value || ( this._evaled.value = this._evaled.ctxt[ this._evaled.prop ] );
 				},
 				toString : function() {
-					return this._evaled.string || ( this._evaled.string = this._value.path.toString() + " = " + this._value.value.toString() );
+					if ( !("string" in this._evaled) ) {
+						this._evaled.string = this._value.path.toString();
+						if ( this._value.del )
+							this._evaled.string += "(delete)";
+						else if ( "value" in this._value )
+							this._evaled.string += " = " + this._value.value.toString();
+					}
+					
+					return this._evaled.string;
 				},
 				
 				invalidate : function( from ) {
@@ -3179,18 +3105,54 @@
 					var evaled = this._evaled,
 						value  = this._value;
 					
-					this.unlink( "value" );
+					//new value is current value in context
+					if ( val instanceof Context && val._value.value === value.value )
+						val = val.valueOf();
 					
+					if ( val instanceof Expression && val._value.op === "." )
+						val = PropPath( val );
+					
+					//delete links from value to this instance
+					var rmvList = {};
+					this.unlink( "value", rmvList );
+					
+					//set new value
+					var oldVal = value.value;
 					value.value = val;
 					
-					!dontTrack && this.link( "value" );
+					if ( val && val._isFunc )
+						delete val._isFunc;
+					
+					try {
+						this.invalidate();
+					} catch ( e ) {
+						//restore old value
+						delete evaled.value;
+						delete evaled.string;
+						value.value = oldVal;
+						!dontTrack && this.link( "value", rmvList );
+						
+						if ( val instanceof PropPath )
+							val.remove();
+						
+						throw( e );
+					}
+					
+					//link value to this instance
+					!dontTrack && this.link( "value", rmvList );
+					
+					for ( var id in rmvList )
+						rmvList[ id ].remove();
 					
 					evaled.value = val && val.valueOf();
 					value.del = del;
 					
-					if ( rev && !value.rev ) {
-						value.backupVal = evaled.ctxt[ evaled.prop ];
-						value.backupDel = evaled.prop in evaled.ctxt ? false : true;
+					if ( !rev && value.rev ) {
+						this._revRevVal( value.backup, evaled.ctxt, evaled.prop );
+						delete value.backup;
+					
+					} else if ( rev && !value.rev ) {
+						value.backup = this._getRevVal( evaled.ctxt, evaled.prop );
 					}
 					
 					value.rev = rev;
@@ -3212,10 +3174,8 @@
 					
 					//revert value of old path, if marked so
 					if ( value.rev ) {
-						if ( value.backupDel )
-							delete evaled.ctxt[ evaled.prop ];
-						else
-							evaled.ctxt[ evaled.prop ] = value.backupVal;
+						this._revRevVal( value.backup, evaled.ctxt, evaled.prop );
+						delete value.backup;
 					}
 					
 					//get new obj and prop
@@ -3234,8 +3194,7 @@
 					}
 					
 					//get new backup values
-					value.backupVal = evaled.ctxt[ evaled.prop ];
-					value.backupDel = evaled.prop in evaled.ctxt ? false : true;
+					value.backup = this._getRevVal( evaled.ctxt, evaled.prop );
 					
 					//set object property value
 					if ( "value" in value ) {
@@ -3260,15 +3219,16 @@
 						evaled.ctxt[ evaled.prop ] = evaled.value;
 				},
 				remove : function() {
+					for ( var id in this._partOf )
+						error( "Cannot deregister property path. It is still used in " + String( this._partOf[ id ] ) + "!" );
+					
 					var evaled = this._evaled,
 						value  = this._value;
 					
 					//revert value of old path, if marked so
 					if ( value.rev ) {
-						if ( value.backupDel )
-							delete evaled.ctxt[ evaled.prop ];
-						else
-							evaled.ctxt[ evaled.prop ] = value.backupVal;
+						this._revRevVal( value.backup, evaled.ctxt, evaled.prop );
+						delete value.backup;
 					}
 					
 					delete PropPath.prototype._paths[ this._guid ];
@@ -3350,6 +3310,7 @@
 			};
 			
 			//initializing interpreter
+			//built-in modules
 			var mathModule = ( function() {
 					var ret = {
 						pi		: Math.PI,
@@ -3393,7 +3354,9 @@
 					return ret;
 				}() );
 			
-			var setupVars = function( consts, base, parseFunc ) {
+			//setup interpreter
+			var dontTrack = false;
+				setupVars = function( consts, base, parseFunc ) {
 					var table = base ? Object.create( base ) : {};
 					
 					if ( consts ) {

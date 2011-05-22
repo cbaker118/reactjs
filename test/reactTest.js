@@ -564,6 +564,8 @@ test( "accessing object properties", function() {
 	
 	raises( function() { react( null, ".prop" ) }, "react( null, \".prop\" ) -> exception" );
 	raises( function() { react( undefined, ".prop" ) }, "react( undefined, \".prop\" ) -> exception" );
+	
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 } );
 
 test( "accessing object properties regarding operator precedence", function() {
@@ -580,6 +582,8 @@ test( "accessing object properties regarding operator precedence", function() {
 	
 	strictEqual( react( obj, "[ false ? 'fst' : 'snd' ]" ), 2, "react( obj, \"[ false ? 'fst' : 'snd' ]\" )" );
 	strictEqual( react( obj, "[", obj, "[ 'bar' ] ]" ), "bar", "react( obj, \"[, obj, \"[ 'bar' ] ]\" )" );
+	
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 } );
 
 test( "assignment to and deletion of object properties", function() {
@@ -601,7 +605,11 @@ test( "assignment to and deletion of object properties", function() {
 	ok( react( "delete", obj, ".inner.prop" ), "react( \"delete\", obj, \".inner.prop\" )" );
 	strictEqual( "prop" in obj.inner, false, "\"prop\" in obj.inner" );
 	
-	react( "~", obj, ".prop; ~", obj, ".inner.prop" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 2, "2 paths registered" );
+	
+	ok( react( "~", obj, ".prop; ~", obj, ".inner.prop" ), "react( \"~\", obj, \".prop; ~\", obj, \".inner.prop\" )" );
+	
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 } );
 
 test( "reversible assignment to and deletion of object properties", function() {
@@ -616,8 +624,12 @@ test( "reversible assignment to and deletion of object properties", function() {
 	ok( react( "~delete", obj, ".prop" ), "react( \"~delete\", obj, \".prop\" )" );
 	strictEqual( "prop" in obj, false, "\"prop\" in obj" );
 	
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
+	
 	ok( react( "~", obj, ".prop" ), "react( \"~\", obj, \".prop\" )" );
 	strictEqual( obj.prop, "value", "obj.prop" );
+	
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 } );
 
 
@@ -634,6 +646,8 @@ test( "calling functions", function() {
 	strictEqual( react( func, "( true, true )" ), "two args", "react( func, \"( true, true )\" )" );
 	
 	raises( function() { react( 5, "()" ) }, "calling not a function: react( 5, \"()\" ) -> exception" );
+	
+	strictEqual( countProps( react.leak.FunctionCall.prototype._paths ), 0, "no calls registered" );
 } );
 
 test( "calling functions regarding operator precedence", function() {
@@ -648,6 +662,8 @@ test( "calling functions regarding operator precedence", function() {
 	strictEqual( react( func, "( 5 ) + 4" ), 9, "react( func, \"( 5 ) + 4\" )" );
 	strictEqual( react( "5 + ", func, "( 5 )" ), 10, "react( \"5 + \", func, \"( 5 )\" )" );
 	strictEqual( react( func, "( 5 ) + 4" ), 9, "react( func, \"( 5 ) + 4\" )" );
+	
+	strictEqual( countProps( react.leak.FunctionCall.prototype._paths ), 0, "no calls registered" );
 } );
 
 test( "calling methods of objects", function() {
@@ -680,11 +696,15 @@ test( "extern (re-)assignment", function() {
 	var rea = react.leak( "rea = 'variable'" ),
 		pi = react.leak( "pi" );
 	
+	ok( react.leak.nameTable.table.rea === rea, "rea has been stored in the variable name table." );
+	
 	ok( rea, "rea = react.leak( \"rea = 'variable'\" )" );
 	strictEqual( rea.valueOf(), 'variable', "rea.valueOf() after assignment" );
+	strictEqual( rea.toString(), 'rea = "variable"', "rea.toString() after assignment" );
 	
 	ok( react( rea, "= 'new variable'" ), "react( rea, \"= 'new variable'\" )" );
 	strictEqual( rea.valueOf(), 'new variable', "rea.valueOf() after reassignment" );
+	strictEqual( rea.toString(), 'rea = "new variable"', "rea.toString() after reassignment" );
 	
 	strictEqual( react.leak( rea, "=", rea, " + '!!!'" )._value.value, "new variable!!!", "infix calculation with self-reference: react( rea, \"=\", rea, \" + '!!!'\" )._value === \"new variable!!!\"" );
 	
@@ -734,10 +754,11 @@ test( "extern delete", function() {
 	
 	strictEqual( react( "delete", rea ), true, "react( \"delete\", rea )" );
 	
+	ok( !("rea" in react.leak.nameTable.table), "rea has been deleted from the variable name table." );
+	
 	ok( !rea.hasOwnProperty( "_value" ), "value of rea removed" );
 	ok( !rea.hasOwnProperty( "_dep" ), "dependencies of rea removed" );
 	ok( !rea.hasOwnProperty( "_partOf" ), "partOf of rea removed" );
-	ok( !rea.hasOwnProperty( "_funcs" ), "bound functions of rea removed" );
 	
 	raises( function() { react( "delete", pi ) }, "react( \"delete\", pi ) -> exception" );
 	strictEqual( ( function() {
@@ -765,8 +786,11 @@ test( "intern (re-)assignment of named variables", function() {
 	strictEqual( react.leak( "rea" ), rea, "rea === react.leak( \"rea\" )" );
 	
 	strictEqual( rea.valueOf(), 'variable', "rea.valueOf() after assignment" );
+	strictEqual( rea.toString(), 'rea = "variable"', "rea.toString() after assignment" );
+	
 	ok( react( "rea = 'new variable'" ), "react( \"rea = 'new variable'\" )" );
 	strictEqual( rea.valueOf(), 'new variable', "rea.valueOf() after reassignment" );
+	strictEqual( rea.toString(), 'rea = "new variable"', "rea.toString() after assignment" );
 	
 	strictEqual( react.leak( "rea = rea + '!!!'" )._value.value, "new variable!!!", "infix calculation with self-reference: react( \"rea = rea + '!!!'\" )._value === \"new variable!!!\"" );
 	
@@ -803,6 +827,8 @@ test( "intern delete of named variables", function() {
 	
 	strictEqual( rea._key, "rea", "key of rea is set to \"rea\"" );
 	strictEqual( react( "delete rea" ), true, "react( \"delete rea\" )" );
+	
+	ok( !("rea" in react.leak.nameTable.table), "rea has been deleted from the variable name table." );
 	
 	raises( function() { react( "rea" ) }, "after delete: react( \"rea\" ) -> exception" );
 	strictEqual( ( function() {
@@ -1345,14 +1371,16 @@ test( "operator assignments", function() {
 	react( "z *= z" );
 	ok( compare( z._value.value, [ "^", [ "+", 5, [ "*", 10, x ] ], 2 ] ), "named variable: react( \"z *= z\" )" );
 	
-	var litObj = { prop : 'str' }
-	var obj = react.leak( "obj = ", litObj );
+	var litObj = { prop : 'str' },
+		obj = react.leak( "obj = ", litObj );
+	
 	ok( true, "litObj = { prop : 'str' }" );
 	ok( true, "react( \"obj =\", litObj )" );
 	ok( obj.valueOf() === litObj, "react( \"obj\" ) === litObj" );
 	
 	ok( react( "obj.prop += 'ing'" ), "react( \"obj.prop += 'ing'\" )" );
 	strictEqual( litObj.prop, "string", "litObj.prop" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
 	
 	raises( function() { react( "obj.=prop" ) }, "react( \"obj.=prop\" ) makes obj a literal -> exception because of react( \"obj.prop += 'ing'\" )" );
 	strictEqual( ( function() {
@@ -1365,12 +1393,14 @@ test( "operator assignments", function() {
 	
 	ok( obj.valueOf() === litObj, "react( \"obj\" ).valueOf() unchanged." );
 	react( "~obj.prop" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	
 	var func = react.leak( "func = ", function() { return "string" } );
 	ok( true, "react( \"func = \", function() { return \"string\" } )" );
 	
 	react( "func(=)" );
 	strictEqual( func._value.value, "string", "function call assignment: react( \"func(=)\" )" );
+	strictEqual( countProps( react.leak.FunctionCall.prototype._calls ), 0, "no call registered" );
 	
 	var zVal = z._value.value;
 	react.leak( "no partOf", "z ==.= 'bar'" );
@@ -1429,7 +1459,19 @@ test( "assigning object to variable", function() {
 	react( "delete rea" );
 } );
 
-test( "property access: object is literal, property is variable", function() {
+test( "assign object property to variable", function() {
+	var obj = { prop : 'string' };
+	
+	strictEqual( react( "rea =", obj, ".prop" ), "string", "react( \"rea =\", obj, \".prop\" )" );
+	ok( obj.prop = 'number', "obj.prop = 'number'" );
+	strictEqual( react( "rea" ), "string", "react( \"rea\" )" );
+	ok( react( obj, ".prop = 'boolean'" ), "react( obj, \".prop = 'boolean'\" )" );
+	strictEqual( react( "rea" ), "boolean", "react( \"rea\" )" );
+	
+	react( "clean" );
+} );
+
+test( "property access: object is literal, property paths are variables, literals and other property paths", function() {
 	var sObj = { fst : 1, snd : 2, foo : { bar : "foo" } };
 	
 	ok( sObj, "sObj = { fst : 1, snd : 2, foo : { bar : \"foo\" } }" );
@@ -1439,9 +1481,11 @@ test( "property access: object is literal, property is variable", function() {
 	ok( compare( react.leak( "no partOf", sObj, ".foo[ bar ]" ), [ ".", sObj, "foo", bar ] ), "1st propname constant, 2nd variable: react( sObj, \".foo[ bar ]\" )" );
 	ok( compare( react.leak( "no partOf", sObj, "[ foo ].bar" ), [ ".", sObj, foo, "bar" ] ), "1st propname variable, 2nd constant: react( sObj, \"[ foo ].bar\" )" );
 	ok( compare( react.leak( "no partOf", sObj, "[ ", sObj, "[ foo ].bar ]" ), [ ".", sObj, [ ".", sObj, foo, "bar" ] ] ), "1st propname also uses property access: react( sObj, \"[ \", sObj, \"[ foo ].bar ]\" )" );
+	
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 } );
 
-test( "property access: object is variable, property is literal", function() {	
+test( "property access: object is variable, property paths are variables, literals and other property paths", function() {	
 	var obj  = react.leak( "obj = ", { foo : { bar : "bar" }, fst : 1, snd : 2 } );
 	
 	ok( obj, "obj = react.leak( \"obj = \", { foo : { bar : \"bar\" }, fst : 1, snd : 2 } )" );
@@ -1452,6 +1496,8 @@ test( "property access: object is variable, property is literal", function() {
 	ok( compare( react.leak( "no partOf", "obj.foo[ bar ]" ), [ ".", obj, "foo", bar ] ), "1st propname constant, 2nd variable: react( \"obj.foo[ bar ]\" )" );
 	ok( compare( react.leak( "no partOf", "obj[ foo ].bar" ), [ ".", obj, foo, "bar" ] ), "1st propname variable, 2nd constant: react( \"obj[ foo ].bar\" )" );
 	ok( compare( react.leak( "no partOf", "obj[ obj[ foo ].bar ]" ), [ ".", obj, [ ".", obj, foo, "bar" ] ] ), "1st propname also uses property access: react( \"obj[ obj[ foo ].bar ]\" )" );
+	
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 } );
 
 test( "permanent property assignment: object literal, property variable", function() {
@@ -1461,6 +1507,7 @@ test( "permanent property assignment: object literal, property variable", functi
 	ok( react( "prop = 'bar'" ), "react( \"prop = 'bar'\" )" );
 	
 	ok( react( obj, "[ prop ] = 'value'" ), "react( obj, \"[ prop ] = 'value'\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
 	
 	strictEqual( obj.foo, "foo", "obj.foo" );
 	strictEqual( obj.bar, "value", "obj.bar" );
@@ -1471,6 +1518,7 @@ test( "permanent property assignment: object literal, property variable", functi
 	strictEqual( obj.bar, "value", "obj.bar" );
 	
 	ok( react( "~", obj, "[ prop ]" ), "react( \"~\", obj, \"[ prop ]\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	
 	strictEqual( obj.foo, "value", "obj.foo" );
 	strictEqual( obj.bar, "value", "obj.bar" );
@@ -1488,6 +1536,7 @@ test( "permanent property assignment: object variable, property literal", functi
 	ok( react( "robj = ", obj1 ), "react( \"robj = \", obj1 )" );
 	
 	ok( react( "robj.prop = 'value'" ), "react( \"robj.prop = 'value'\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
 	
 	strictEqual( obj1.prop, "value", "obj1.prop" );
 	strictEqual( obj2.prop, "bar", "obj2.prop" );
@@ -1498,6 +1547,7 @@ test( "permanent property assignment: object variable, property literal", functi
 	strictEqual( obj2.prop, "value", "obj2.prop" );
 	
 	ok( react( "~robj.prop" ), "react( \"~robj.prop\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	
 	strictEqual( obj1.prop, "value", "obj1.prop" );
 	strictEqual( obj2.prop, "value", "obj2.prop" );
@@ -1505,13 +1555,14 @@ test( "permanent property assignment: object variable, property literal", functi
 	react( "delete robj; delete bool;" );
 } );
 
-test( "permanent property assignment: object literal, property valueArray", function() {
+test( "permanent property assignment: object literal, property Expression", function() {
 	var obj = { foo : "foo" };
 	
 	ok( obj, "obj = { foo : \"foo\" }" );
 	
 	ok( react( "bool = true" ), "react( \"bool = true\" )" );
 	ok( react( obj, "[ bool ? 'foo' : 'bar' ] = 'value'" ), "react( obj, \"[ bool ? 'foo' : 'bar' ] = 'value'\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
 	
 	strictEqual( obj.foo, "value", "obj.foo" );
 	strictEqual( 'bar' in obj, false, "'bar' in obj" );
@@ -1522,6 +1573,7 @@ test( "permanent property assignment: object literal, property valueArray", func
 	strictEqual( obj.bar, "value", "obj.bar" );
 	
 	ok( react( "~", obj, "[ bool ? 'foo' : 'bar' ]" ), "react( \"~\", obj, \"[ bool ? 'foo' : 'bar' ]\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	
 	strictEqual( obj.foo, "value", "obj.foo" );
 	strictEqual( obj.bar, "value", "obj.bar" );
@@ -1529,7 +1581,7 @@ test( "permanent property assignment: object literal, property valueArray", func
 	react( "delete bool;" );
 } );
 
-test( "permanent property assignment: object valueArray, property literal", function() {
+test( "permanent property assignment: object Expression, property literal", function() {
 	var obj1 = {},
 		obj2 = { prop : "bar" };
 	
@@ -1538,6 +1590,7 @@ test( "permanent property assignment: object valueArray, property literal", func
 	
 	ok( !react( "bool = false" ), "react( \"bool = false\" )" );
 	ok( react( "( bool ?", obj1, " : ", obj2, ").prop = 'value'" ), "react( \"( bool ?\", obj1, \" : \", obj2, \").prop = 'value'\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
 	
 	strictEqual( "prop" in obj1, false, "\"prop\" in obj1" );
 	strictEqual( obj2.prop, "value", "obj2.prop" );
@@ -1548,6 +1601,7 @@ test( "permanent property assignment: object valueArray, property literal", func
 	strictEqual( obj2.prop, "value", "obj2.prop" );
 	
 	ok( react( "~( bool ?", obj1, " : ", obj2, ").prop" ), "react( \"~( bool ?\", obj1, \" : \", obj2, \").prop\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	
 	strictEqual( obj1.prop, "value", "obj1.prop" );
 	strictEqual( obj2.prop, "value", "obj2.prop" );
@@ -1560,14 +1614,19 @@ test( "permanent property assignment: object literal, property property path", f
 	
 	ok( react( "propObj =", {} ), "react( \"propObj =\", {} )" );
 	ok( react( "propObj.prop = 'prop1'" ), "react( \"propObj.prop = 'prop1'\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
 	
 	ok( react( obj, "[ propObj.prop ] = 'value'" ), "react( obj, \"[ propObj.prop ] = 'value'\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 2, "two paths registered" );
 	strictEqual( obj.prop1, "value", "obj.prop1" );
 	ok( react( "propObj.prop = 'prop2'" ), "react( \"propObj.prop = 'prop2'\" )" );
 	strictEqual( obj.prop2, "value", "obj.prop2" );
 	
+	raises( function() { react( "~propObj.prop" ); }, "Cannot deregister prop paths, that are in use: react( \"~propObj.prop\" ) -> exception" );
+	
 	react( "~", obj, "[ propObj.prop ]" );
 	react( "~propObj.prop" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	react( "delete propObj" );
 } );
 
@@ -1576,14 +1635,19 @@ test( "permanent property assignment: object property path, property literal", f
 	
 	ok( react( "objObj =", {} ), "react( \"objObj =\", {} )" );
 	ok( react( "objObj.inner =", obj1 ), "react( \"objObj.inner =\", obj1 )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
 	
 	ok( react( "objObj.inner.prop = 'value'" ), "react( \"objObj.inner.prop = 'value'\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 2, "two path registered" );
 	strictEqual( obj1.prop, "value", "obj1.prop" );
 	ok( react( "objObj.inner =", obj2 ), "react( \"objObj.inner =\", obj2 )" );
 	strictEqual( obj2.prop, "value", "obj2.prop" );
 	
+	raises( function() { react( "~objObj.inner" ); }, "Cannot deregister prop paths, that are in use: react( \"~objObj.inner\" ) -> exception" );
+	
 	react( "~objObj.inner.prop" );
 	react( "~objObj.inner" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	react( "delete objObj" );
 } );
 
@@ -1596,11 +1660,17 @@ test( "permanent property assignment: object literal, property function call", f
 	ok( react( "prop = 'prop1'" ), "react( \"prop = 'prop1'\" )" );
 	
 	ok( react( obj, "[", prop, "( prop ) ] = 'value'" ), "react( obj, \"[\", prop, \"( prop ) ] = 'value'\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
+	strictEqual( countProps( react.leak.FunctionCall.prototype._calls ), 1, "one call registered" );
 	strictEqual( obj.prop1, "value", "obj.prop1" );
 	ok( react( "prop = 'prop2'" ), "react( \"prop = 'prop2'\" )" );
 	strictEqual( obj.prop2, "value", "obj.prop2" );
 	
+	raises( function() { react( "~", prop, "( prop )" ); }, "Cannot deregister functions, that are in use: react( \"~\", prop, \"( prop )\" ) -> exception" );
+	
 	react( "~", obj, "[", prop, "( prop ) ]" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
+	strictEqual( countProps( react.leak.FunctionCall.prototype._calls ), 0, "no call registered" );
 	react( "delete prop" );
 } );
 
@@ -1614,11 +1684,17 @@ test( "permanent property assignment: object function call, property literal", f
 	ok( react( "obj =", obj1 ), "react( \"obj =\", obj1 )" );
 	
 	ok( react( obj, "( obj )[ 'prop' ] = 'value'" ), "react( obj, \"( obj )[ 'prop' ] = 'value'\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
+	strictEqual( countProps( react.leak.FunctionCall.prototype._calls ), 1, "one call registered" );
 	strictEqual( obj1.prop, "value", "obj1.prop" );
 	ok( react( "obj =", obj2 ), "react( \"obj =\", obj2 )" );
 	strictEqual( obj2.prop, "value", "obj2.prop" );
 	
+	raises( function() { react( "~", obj, "( obj )" ); }, "Cannot deregister functions, that are in use: react( \"~\", obj, \"( obj )\" ) -> exception" );
+	
 	react( "~", obj, "( obj )[ 'prop' ]" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
+	strictEqual( countProps( react.leak.FunctionCall.prototype._calls ), 0, "no call registered" );
 	react( "delete obj" );
 } );
 
@@ -1630,6 +1706,7 @@ test( "reversible property assignment: object literal, property variable", funct
 	ok( react( "prop = 'bar'" ), "react( \"prop = 'bar'\" )" );
 	
 	ok( react( obj, "[ prop ] ~= 'value'" ), "react( obj, \"[ prop ] ~= 'value'\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
 	
 	strictEqual( obj.foo, "foo", "obj.foo" );
 	strictEqual( obj.bar, "value", "obj.bar" );
@@ -1645,6 +1722,7 @@ test( "reversible property assignment: object literal, property variable", funct
 	strictEqual( obj.bar, "value", "obj.bar" );
 	
 	ok( react( "~", obj, "[ prop ]" ), "react( \"~\", obj, \"[ prop ]\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	
 	strictEqual( obj.foo, "foo", "obj.foo" );
 	strictEqual( 'bar' in obj, false, "'bar' in obj" );
@@ -1662,6 +1740,7 @@ test( "reversible property assignment: object variable, property literal", funct
 	ok( react( "robj = ", obj1 ), "react( \"robj = \", obj1 )" );
 	
 	ok( react( "robj.prop ~= 'value'" ), "react( \"robj.prop ~= 'value'\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
 	
 	strictEqual( obj1.prop, "value", "obj1.prop" );
 	strictEqual( obj2.prop, "bar", "obj2.prop" );
@@ -1677,6 +1756,7 @@ test( "reversible property assignment: object variable, property literal", funct
 	strictEqual( obj2.prop, "bar", "obj2.prop" );
 	
 	ok( react( "~robj.prop" ), "react( \"~robj.prop\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	
 	strictEqual( "prop" in obj1, false, "\"prop\" in obj1" );
 	strictEqual( obj2.prop, "bar", "obj2.prop" );
@@ -1684,7 +1764,7 @@ test( "reversible property assignment: object variable, property literal", funct
 	react( "delete robj; delete bool;" );
 } );
 
-test( "reversible property assignment: object literal, property valueArray", function() {
+test( "reversible property assignment: object literal, property Expression", function() {
 	var obj = { foo : "foo" };
 	
 	ok( obj, "obj = { foo : \"foo\" }" );
@@ -1692,6 +1772,7 @@ test( "reversible property assignment: object literal, property valueArray", fun
 	ok( react( "bool = true" ), "react( \"bool = true\" )" );
 	ok( react( "prop = bool ? 'foo' : 'bar'" ), "react( \"prop = bool ? 'foo' : 'bar'\" )" );
 	ok( react( obj, "[ prop ] ~= 'value'" ), "react( obj, \"[ prop ] ~= 'value'\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
 	
 	strictEqual( obj.foo, "value", "obj.foo" );
 	strictEqual( 'bar' in obj, false, "'bar' in obj" );
@@ -1702,6 +1783,7 @@ test( "reversible property assignment: object literal, property valueArray", fun
 	strictEqual( obj.bar, "value", "obj.bar" );
 	
 	ok( react( "~", obj, "[ prop ]" ), "react( \"~\", obj, \"[ prop ]\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	
 	strictEqual( obj.foo, "foo", "obj.foo" );
 	strictEqual( 'bar' in obj, false, "'bar' in obj" );
@@ -1709,7 +1791,7 @@ test( "reversible property assignment: object literal, property valueArray", fun
 	react( "delete prop; delete bool;" );
 } );
 
-test( "reversible property assignment: object valueArray, property literal", function() {
+test( "reversible property assignment: object Expression, property literal", function() {
 	var obj1 = {},
 		obj2 = { prop : "bar" };
 	
@@ -1719,6 +1801,7 @@ test( "reversible property assignment: object valueArray, property literal", fun
 	ok( !react( "bool = false" ), "react( \"bool = false\" )" );
 	ok( react( "robj = bool ?", obj1, " : ", obj2 ), "react( \"robj = bool ?\", obj1, \" : \", obj2 )" );
 	ok( react( "robj.prop ~= 'value'" ), "react( \"robj.prop ~= 'value'\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
 	
 	strictEqual( "prop" in obj1, false, "\"prop\" in obj1" );
 	strictEqual( obj2.prop, "value", "obj2.prop" );
@@ -1729,6 +1812,7 @@ test( "reversible property assignment: object valueArray, property literal", fun
 	strictEqual( obj2.prop, "bar", "obj2.prop" );
 	
 	ok( react( "~robj.prop" ), "react( \"~robj.prop\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	
 	strictEqual( "prop" in obj1, false, "\"prop\" in obj1" );
 	strictEqual( obj2.prop, "bar", "obj2.prop" );
@@ -1743,6 +1827,7 @@ test( "reversible property assignment: object literal, property property path", 
 	ok( react( "propObj.prop = 'prop1'" ), "react( \"propObj.prop = 'prop1'\" )" );
 	
 	ok( react( obj, "[ propObj.prop ] ~= 'value'" ), "react( obj, \"[ propObj.prop ] ~= 'value'\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 2, "two paths registered" );
 	strictEqual( obj.prop1, "value", "obj.prop1" );
 	
 	ok( react( "propObj.prop = 'prop2'" ), "react( \"propObj.prop = 'prop2'\" )" );
@@ -1753,6 +1838,7 @@ test( "reversible property assignment: object literal, property property path", 
 	ok( !( "prop2" in obj ), "!( \"prop2\" in obj )" );
 	
 	react( "~propObj.prop" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	react( "delete propObj" );
 } );
 
@@ -1763,6 +1849,7 @@ test( "reversible property assignment: object property path, property literal", 
 	ok( react( "objObj.inner =", obj1 ), "react( \"objObj.inner =\", obj1 )" );
 	
 	ok( react( "objObj.inner.prop ~= 'value'" ), "react( \"objObj.inner.prop ~= 'value'\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 2, "two paths registered" );
 	strictEqual( obj1.prop, "value", "obj1.prop" );
 	
 	ok( react( "objObj.inner =", obj2 ), "react( \"objObj.inner =\", obj2 )" );
@@ -1773,6 +1860,7 @@ test( "reversible property assignment: object property path, property literal", 
 	ok( !( "prop" in obj2 ), "!( \"prop\" in obj2 )" );
 	
 	react( "~objObj.inner" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	react( "delete objObj" );
 } );
 
@@ -1785,6 +1873,8 @@ test( "reversible property assignment: object literal, property function call", 
 	ok( react( "prop = 'prop1'" ), "react( \"prop = 'prop1'\" )" );
 	
 	ok( react( obj, "[", prop, "( prop ) ] ~= 'value'" ), "react( obj, \"[\", prop, \"( prop ) ] ~= 'value'\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
+	strictEqual( countProps( react.leak.FunctionCall.prototype._calls ), 1, "one call registered" );
 	strictEqual( obj.prop1, "value", "obj.prop1" );
 	
 	ok( react( "prop = 'prop2'" ), "react( \"prop = 'prop2'\" )" );
@@ -1792,6 +1882,8 @@ test( "reversible property assignment: object literal, property function call", 
 	ok( !( "prop1" in obj ), "!( \"prop1\" in obj )" );
 	
 	ok( react( "~", obj, "[", prop, "( prop ) ]" ), "react( \"~\", obj, \"[\", prop, \"( prop ) ]\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
+	strictEqual( countProps( react.leak.FunctionCall.prototype._calls ), 0, "no call registered" );
 	ok( !( "prop2" in obj ), "!( \"prop2\" in obj )" );
 	
 	react( "delete prop" );
@@ -1807,6 +1899,8 @@ test( "reversible property assignment: object function call, property literal", 
 	ok( react( "obj =", obj1 ), "react( \"obj =\", obj1 )" );
 	
 	ok( react( obj, "( obj )[ 'prop' ] ~= 'value'" ), "react( obj, \"( obj )[ 'prop' ] ~= 'value'\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
+	strictEqual( countProps( react.leak.FunctionCall.prototype._calls ), 1, "one call registered" );
 	strictEqual( obj1.prop, "value", "obj1.prop" );
 	
 	ok( react( "obj =", obj2 ), "react( \"obj =\", obj2 )" );
@@ -1814,6 +1908,8 @@ test( "reversible property assignment: object function call, property literal", 
 	ok( !( "prop" in obj1 ), "!( \"prop\" in obj1 )" );
 	
 	ok( react( "~", obj, "( obj )[ 'prop' ]" ), "react( \"~\", obj, \"( obj )[ 'prop' ]\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
+	strictEqual( countProps( react.leak.FunctionCall.prototype._calls ), 0, "no call registered" );
 	ok( !( "prop" in obj2 ), "!( \"prop\" in obj2 )" );
 	
 	react( "delete obj" );
@@ -1829,6 +1925,7 @@ test( "permanent property deletion", function() {
 	ok( !react( "bool = false" ), "react( \"bool = false\" )" );
 	ok( react( "robj = bool ?", obj1, " : ", obj2 ), "react( \"robj = bool ?\", obj1, \" : \", obj2 )" );
 	ok( react( "delete robj.prop" ), "react( \"delete robj.prop\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
 	
 	strictEqual( obj1.prop, "foo", "obj1.prop" );
 	strictEqual( "prop" in obj2, false, "\"prop\" in obj2" );
@@ -1839,6 +1936,7 @@ test( "permanent property deletion", function() {
 	strictEqual( "prop" in obj2, false, "\"prop\" in obj2" );
 	
 	ok( react( "~robj.prop" ), "react( \"~robj.prop\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	
 	strictEqual( "prop" in obj1, false, "\"prop\" in obj1" );
 	strictEqual( "prop" in obj2, false, "\"prop\" in obj2" );
@@ -1856,6 +1954,7 @@ test( "reversible property deletion", function() {
 	ok( !react( "bool = false" ), "react( \"bool = false\" )" );
 	ok( react( "robj = bool ?", obj1, " : ", obj2 ), "react( \"robj = bool ?\", obj1, \" : \", obj2 )" );
 	ok( react( "~delete robj.prop" ), "react( \"~delete robj.prop\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
 	
 	strictEqual( obj1.prop, "foo", "obj1.prop" );
 	strictEqual( "prop" in obj2, false, "\"prop\" in obj2" );
@@ -1866,6 +1965,7 @@ test( "reversible property deletion", function() {
 	strictEqual( obj2.prop, "bar", "obj2.prop" );
 	
 	ok( react( "~robj.prop" ), "react( \"~robj.prop\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	
 	strictEqual( obj1.prop, "foo", "obj1.prop" );
 	strictEqual( obj2.prop, "bar", "obj2.prop" );
@@ -1888,6 +1988,8 @@ test( "property reassignment: overwrite permanent assignment with permanent assi
 	ok( react( "~", obj, "[ prop ]" ), "react( \"~\", obj, \"[ prop ]\" )" );
 	strictEqual( obj.foo, "after", "obj.foo" );
 	
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
+	
 	react( "delete prop" );
 } );
 
@@ -1905,6 +2007,8 @@ test( "property reassignment: overwrite permanent assignment with reversible ass
 	
 	ok( react( "~", obj, "[ prop ]" ), "react( \"~\", obj, \"[ prop ]\" )" );
 	strictEqual( obj.foo, "before", "obj.foo" );
+	
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	
 	react( "delete prop" );
 } );
@@ -1924,6 +2028,8 @@ test( "property reassignment: overwrite permanent assignment with permanent dele
 	ok( react( "~", obj, "[ prop ]" ), "react( \"~\", obj, \"[ prop ]\" )" );
 	strictEqual( "prop" in obj, false, "\"prop\" in obj" );
 	
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
+	
 	react( "delete prop" );
 } );
 
@@ -1941,6 +2047,8 @@ test( "property reassignment: overwrite permanent assignment with reversible del
 	
 	ok( react( "~", obj, "[ prop ]" ), "react( \"~\", obj, \"[ prop ]\" )" );
 	strictEqual( obj.foo, "before", "obj.foo" );
+	
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	
 	react( "delete prop" );
 } );
@@ -1960,6 +2068,8 @@ test( "property reassignment: overwrite reversible assignment with permanent ass
 	ok( react( "~", obj, "[ prop ]" ), "react( \"~\", obj, \"[ prop ]\" )" );
 	strictEqual( obj.foo, "after", "obj.foo" );
 	
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
+	
 	react( "delete prop" );
 } );
 
@@ -1977,6 +2087,8 @@ test( "property reassignment: overwrite reversible assignment with reversible as
 	
 	ok( react( "~", obj, "[ prop ]" ), "react( \"~\", obj, \"[ prop ]\" )" );
 	strictEqual( obj.foo, "foo", "obj.foo" );
+	
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	
 	react( "delete prop" );
 } );
@@ -1996,6 +2108,8 @@ test( "property reassignment: overwrite reversible assignment with permanent del
 	ok( react( "~", obj, "[ prop ]" ), "react( \"~\", obj, \"[ prop ]\" )" );
 	strictEqual( "prop" in obj, false, "\"prop\" in obj" );
 	
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
+	
 	react( "delete prop" );
 } );
 
@@ -2013,6 +2127,8 @@ test( "property reassignment: overwrite reversible assignment with reversible de
 	
 	ok( react( "~", obj, "[ prop ]" ), "react( \"~\", obj, \"[ prop ]\" )" );
 	strictEqual( obj.foo, "foo", "obj.foo" );
+	
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
 	
 	react( "delete prop" );
 } );
@@ -2037,7 +2153,26 @@ test( "reversible assignment to same property with two different \"reactive path
 	react( "delete objRef1; delete objRef2" );
 } );
 
-test( "assignment of reactive variable to property", function() {
+test( "assignment of reactive variable", function() {
+	var obj = {};
+	
+	ok( react( "rct = 10" ), "react( \"rct = 10\" )" );	
+	
+	ok( react( obj, ".prop = rct" ), "react( obj, \".prop = rct\" )" );
+	strictEqual( obj.prop, 10, "obj.prop" );
+	
+	ok( react( "rct += 10" ), "react( \"rct += 10\" )" );
+	strictEqual( obj.prop, 20, "obj.prop" );
+	
+	raises( function() { react( "delete rct" ); }, "rct still used in obj.prop: react( \"delete rct\" ) -> exception" );
+	
+	ok( react( "~", obj, ".prop" ), "react( \"~\", obj, \".prop\" )" );
+	
+	ok( react( "delete rct" ), "react( \"delete rct\" )" );
+	strictEqual( obj.prop, 20, "obj.prop" );
+} );
+
+test( "assignment of expression", function() {
 	var obj = {};
 	
 	ok( react( "rct = 10" ), "react( \"rct = 10\" )" );	
@@ -2048,21 +2183,75 @@ test( "assignment of reactive variable to property", function() {
 	ok( react( "rct += 10" ), "react( \"rct += 10\" )" );
 	strictEqual( obj.prop, 25, "obj.prop" );
 	
+	raises( function() { react( "delete rct" ); }, "rct still used in obj.prop: react( \"delete rct\" ) -> exception" );
+	
 	ok( react( "~", obj, ".prop" ), "react( \"~\", obj, \".prop\" )" );
 	
 	ok( react( "delete rct" ), "react( \"delete rct\" )" );
 	strictEqual( obj.prop, 25, "obj.prop" );
 } );
 
+test( "assignment of property path", function() {
+	var obj1 = {}, obj2 = { prop : "string" };
+	
+	ok( true, "obj2 = { prop : \"string\" }" );
+	
+	ok( react( obj1, ".prop = ", obj2, ".prop" ), "react( obj1, \".prop = \", obj2, \".prop\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 2, "two paths registered" );
+	strictEqual( obj1.prop, "string", "obj1.prop" );
+	
+	ok( react( obj2, ".prop = 'gnirts'" ), "react( obj2, \".prop = 'gnirts'\" )" );
+	strictEqual( obj2.prop, "gnirts", "obj2.prop" );
+	strictEqual( obj1.prop, "gnirts", "obj1.prop" );
+	
+	raises( function() { react( "~", obj2, ".prop" ); }, "obj2.prop still used in obj1.prop: react( \"~\", obj2, \".prop\" ) -> exception" );
+	
+	ok( react( "~", obj1, ".prop" ), "react( \"~\", obj1, \".prop\" )" );
+	ok( react( "~", obj2, ".prop" ), "react( \"~\", obj2, \".prop\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
+	
+	strictEqual( obj2.prop, "gnirts", "obj2.prop" );
+	strictEqual( obj1.prop, "gnirts", "obj1.prop" );
+} );
+
+test( "assignment of function call", function() {
+	var obj = {},
+		func1 = function() {
+			return 1;
+		},
+		func2 = function() {
+			return 2;
+		};
+	
+	ok( react( "func = ", func1 ), "react( \"func = \", func1 )" );
+	ok( react( obj, ".prop = func()" ), "react( obj, \".prop = func()\"" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 1, "one path registered" );
+	strictEqual( countProps( react.leak.FunctionCall.prototype._calls ), 1, "one call registered" );
+	strictEqual( obj.prop, 1, "obj.prop" );
+	
+	ok( react( "func = ", func2 ), "react( \"func = \", func2 )" );
+	strictEqual( obj.prop, 2, "obj.prop" );
+	
+	ok( react( "~", obj, ".prop" ), "react( \"~\", obj, \"prop\" )" );
+	strictEqual( countProps( react.leak.PropPath.prototype._paths ), 0, "no path registered" );
+	strictEqual( countProps( react.leak.FunctionCall.prototype._calls ), 0, "no call registered" );
+	
+	strictEqual( obj.prop, 2, "obj.prop" );
+} );
+
 test( "assignment of literal value to property with reactive variable", function() {
-	var obj = {};
+	var obj = {},
+		rct,
+		path;
 	
-	ok( react( "rct = 10" ), "react( \"rct = 10\" )" );	
+	ok( rct = react.leak( "rct = 10" ), "react( \"rct = 10\" )" );	
 	
-	ok( react( obj, ".prop = rct+5" ), "react( obj, \".prop = rct+5\" )" );
+	ok( path = react.leak( obj, ".prop = rct+5" ), "react( obj, \".prop = rct+5\" )" );
+	ok( countProps( rct._partOf ) === 1, "rct is part of obj.prop" );
 	strictEqual( obj.prop, 15, "obj.prop" );
 	
 	ok( react( obj, ".prop = 5" ), "react( obj, \".prop = 5\" )" );
+	ok( isEmptyObj( rct._partOf ), "rct is no longer part of obj.prop" );
 	strictEqual( obj.prop, 5, "obj.prop" );
 	
 	react( "~", obj, ".prop" );
@@ -2124,7 +2313,7 @@ test( "call w/o return value: function is variable, argument is literal", functi
 	react( "delete func" );
 } );
 
-test( "call w/o return value: function is valueArray, argument is literal", function() {
+test( "call w/o return value: function is Expression, argument is literal", function() {
 	var foo,
 		func1 = function( arg ) {
 			foo = arg;
@@ -2269,7 +2458,7 @@ test( "call w/o return value: function is literal, argument is variable", functi
 	react( "delete arg1" );
 } ); 
 
-test( "call w/o return value: function is literal, argument is valueArray", function() {
+test( "call w/o return value: function is literal, argument is Expression", function() {
 	var foo,
 		func = function( arg1 ) {
 			foo = arg1;

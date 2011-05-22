@@ -49,11 +49,17 @@ test( "Return value", function() {
 module( "Evaluation of expressions" );
 
 test( "Operator assignments", function() {
+	var func = function( r ) {
+		return r;
+	};
+	
 	react( "r1 = 10; r2 = 10;" );
 	react( "obj1 =", { prop : "head - body - " }, "; obj2 =", { prop : "head - body - " } );
 	react( "obj3 =", { prop : "head - body - " }, "; obj4 =", { prop : "head - body - " } );
 	react( "obj5 =", { repl : "repl" }, "; obj6 =", { repl : "repl" } );
 	react( "prop = 'repl'" );
+	react( "func1 =", func, "; func2 =", func );
+	react( "arg = 10" );
 	react( "bool1 = true; bool2 = true;" );
 	react( "s = 2" );
 	
@@ -63,6 +69,8 @@ test( "Operator assignments", function() {
 	
 	strictEqual( react( "obj3.=prop" ), react( "obj4 = obj4.prop" ), "react( \"obj.=prop\" ) === react( \"obj = obj.prop\" )" );
 	strictEqual( react( "obj5[= prop ]" ), react( "obj6 = obj6[ prop ]" ), "react( \"obj[= prop ]\" ) === react( \"obj = obj[ prop ]\" )" );
+	strictEqual( react( "func1(= arg )" ), react( "func2 = func2( arg )" ), "react( \"func(= arg )\" ) === react( \"func2 = func2( arg )\" )" );
+	
 	strictEqual( react( "bool1 ?= 'true' : 'false'" ), react( "bool2 = bool2 ? 'true' : 'false'" ), "react( \"bool ?= 'true' : 'false'\" ) === react( \"bool = bool ? 'true' : 'false'\" )" );
 	strictEqual( react( "(= r1*s+13 )*10" ), react( "( r2 = r2*s+13 )*10" ), "react( \"(= r*s+13 )*10\" ) === react( \"( r = r*s+13 )*10\" )" );
 	strictEqual( react( "delete= r1" ), react( "r2 = delete r2" ), "react( \"delete= r\" ) === react( \"r = delete r\" )" );
@@ -372,8 +380,11 @@ test( "Deregistering function call", function() {
 	
 	ok( true, "react( \"rainOnCactus =\", function() { return \"The cactus is still there!\"; } );" );
 	strictEqual( react( "cactus = rainOnCactus()" ), "The cactus is still there!", "react( \"cactus = rainOnCactus()\" )" );
-	//ok( react( "~rainOnCactus()" ), "react( \"~rainOnCactus()\" )" );
+	
+	raises( function() { react( "~rainOnCactus()" ) }, "react( \"~rainOnCactus()\" ) -> exception" );
 	strictEqual( react( "cactus" ), "The cactus is still there!", "react( \"cactus\" )" );
+	
+	ok( react( "delete cactus" ), "react( \"delete cactus\" )" );
 	
 	//swearing example
 	var swearing = "",
@@ -382,7 +393,7 @@ test( "Deregistering function call", function() {
 	    };
 	
 	ok( swear, "swear = function( syllable ) { speack += syllable; }" );
-	debugger;
+	
 	ok( react( "dirtyWord = 'DAMN!'" ), "react( \"dirtyWord = 'DAMN!'\" )" );
 	react( swear, "( dirtyWord );", swear, "( dirtyWord )" );
 	strictEqual( swearing, "DAMN!DAMN!", "swearing" );
@@ -455,6 +466,17 @@ test( "Introduction", function() {
 	
 	react( "~", chameleon, ".pattern" );
 	react( "~jaguar.colour" );
+	
+	var background = { pattern : 'leaves' };
+	react( "chameleonPattern = ", background, ".pattern" );
+	strictEqual( react( "chameleonPattern" ), 'leaves', "react( \"chameleonPattern\" )" );
+	
+	background.pattern = 'ground';
+	strictEqual( react( "chameleonPattern" ), 'leaves', "react( \"chameleonPattern\" )" );
+	
+	react( background, ".pattern = 'stone'" );
+	strictEqual( react( "chameleonPattern" ), 'stone', "react( \"chameleonPattern\" )" );
+	
 	react( "clean" );
 } );
 
