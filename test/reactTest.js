@@ -1410,7 +1410,7 @@ test( "operator assignments", function() {
 } );
 
 test( "evaluation before and after modifying a part", function() {
-	var r1 = react.leak( "r1 = x+t" )
+	var r1 = react.leak( "r1 = x+t" ),
 		xpt = x.valueOf() + t.valueOf();
 	
 	ok( r1, "r1 = react.leak( \"r1 = x+t\" )" );

@@ -2477,8 +2477,11 @@
 						return this;
 					
 					//new value is current value in context
-					if ( val instanceof Context && val._value.value === this._value.value )
-						val = val.valueOf();
+					if ( val instanceof Context && val._value.value === this._value.value ) {
+						var tmp = val.valueOf();
+						val.remove();
+						val = tmp;
+					}
 					
 					if ( val instanceof Expression && val._value.op === "." )
 						val = PropPath( val );
