@@ -793,7 +793,7 @@
 							idx = {
 								fst : fst !== undefined && typeof fst._value[ 0 ] === "number" ? 1 : 0,
 								snd : snd !== undefined && typeof snd._value[ 0 ] === "number" ? 1 : 0
-							}
+							};
 						
 						//gather shared factors from front and back
 						for ( var dir in shared ) {
@@ -1900,7 +1900,7 @@
 						token,				//current token
 						expr,				//current expression working on
 						ret = {},			//object to contain the top level expression, that is returned
-						newExpr = true
+						newExpr = true;
 					
 					action.assign = false;
 					action.deregister = false;
@@ -3470,7 +3470,7 @@
 							
 							throw ( error );
 						}
-					}
+					};
 					
 					react.leak.nameTable	= props.nameTable;
 					react.leak.Variable		= Variable;
