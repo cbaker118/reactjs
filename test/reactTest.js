@@ -94,31 +94,29 @@ var equivArr = function( arr1, arr2 ) {
 
 react = react.Interpreter( "debugger", "math" );
 
-//define some variables to work with
-var u = react.leak( "u = undefined" ),
-	n = react.leak( "n = null" ),
-	t = react.leak( "t = true" ),
-	f = react.leak( "f = false" ),
-	x = react.leak( "x = 2.6" ),
-	y = react.leak( "y = 7.4" ),
-	zero = react.leak( "zero = 0" ),
-	one  = react.leak( "one = 1" ),
-	foo  = react.leak( "foo = 'foo'" ),
-	bar  = react.leak( "bar = 'bar'" );
-
 
 module( "General" );
 
 test( "return value of react()", function() {
+	var t = react.leak( "t = true" ),
+		x = react.leak( "x = 2.6" );
+	
 	strictEqual( react( "5+true" ), 5+true, "literal: react( \"5+true\" )" );
 	strictEqual( react( "x" ), x.valueOf(), "variable: react( \"x\" )" );
 	strictEqual( react( "x+t" ), x.valueOf()+t.valueOf(), "value array: react( \"x+t\" )" );
+	
+	react( "clean" )
 } );
 
 test( "return value of react.leak()", function() {
+	var t = react.leak( "t = true" ),
+		x = react.leak( "x = 2.6" );
+	
 	strictEqual( react.leak( "5+true" ), 5+true, "literal: react( \"5+true\" )" );
 	ok( react.leak( "x" ) === x, "variable: react( \"x\" )" );
 	ok( compare( react.leak( "no partOf", "x+t" ), [ "+", x, t ] ), "anonymous variable: react( \"x+t\" )" );
+	
+	react( "clean" )
 } );
 
 test( "undefined / NaN / Infinity", function() {
@@ -241,6 +239,8 @@ test( "projection functions: basic datatypes", function() {
 } );
 
 test( "trigonometric functions and exp/log: variables (all behave the same)", function() {
+	var x = react.leak( "x = 2.6" );
+	
 	var sin = react( "sin" );
 	
 	ok( react.leak( "no partOf", "sin( x )" )._value.func === sin , "react( \"sin( x )\" )._value.func" );
@@ -252,22 +252,32 @@ test( "trigonometric functions and exp/log: variables (all behave the same)", fu
 	
 	ok( react.leak( "no partOf", "asin( sin( x ) )" ) === x, "react( \"asin( sin( x ) )\" )" );
 	ok( react.leak( "no partOf", "sin( asin( x ) )" ) === x, "react( \"sin( asin( x ) )\" )" );
+	
+	react( "clean" )
 } );
 
 test( "projection functions: variables (all behave the same)", function() {
-	round = react( "round" );
+	var x = react.leak( "x = 2.6" );
+	
+	var round = react( "round" );
 	
 	ok( react.leak( "no partOf", "round( x )" )._value.func === round , "react( \"round( x )\" )._value.func" );
 	ok( react.leak( "no partOf", "round( x )" )._value.args === x, "react( \"round( x )\" )._value.args" );
 	
 	ok( react.leak( "no partOf", "round( round( x ) )" )._value.func === round , "react( \"round( round( x ) )\" )._value.func" );
 	ok( react.leak( "no partOf", "round( round( x ) )" )._value.args === x, "react( \"round( round( x ) )\" )._value.args" );
+	
+	react( "clean" )
 } );
 
 
 module( "Multiple expressions" );
 
 test( ";", function() {
+	var t = react.leak( "t = true" ),
+		x = react.leak( "x = 2.6" ),
+		one = react.leak( "one = 1" );
+	
 	strictEqual( react( "s1 = x+t; s2 = x*one; 5" ), 5, "react( \"s1 = x+t; s2 = x*one; 5\" )" );
 	ok( react.leak( "s1" )._key, "react.leak( \"s1\" ) is variable" );
 	ok( react.leak( "s2" )._key, "react.leak( \"s2\" ) is variable" );
@@ -275,6 +285,8 @@ test( ";", function() {
 	strictEqual( react( "delete s1; delete s2; 10" ), 10, "react( \"delete s1; delete s2; 10\" )" );
 	raises( function() { react( "s1" ) }, "react( \"s1\" ) -> exception" );
 	raises( function() { react( "s2" ) }, "react( \"s2\" ) -> exception" );
+	
+	react( "clean" )
 } );
 
 
@@ -711,6 +723,8 @@ test( "extern (re-)assignment", function() {
 	ok( react( rea, "= 5" ), "react( rea, \"= 5\" )" );
 	strictEqual( react.leak( rea, "= -", rea, "* 0.5" )._value.value, -2.5, "prefix calculation with self-reference: react( rea, \"= -\", rea, \"* 0.5\" )._value === -2.5" );
 	
+	react( "delete rea" );
+	
 	raises( function() { react( {}, " = 5" ) }, "react( {}, \" = 5\" ) -> exception" );
 	strictEqual( ( function() {
 		try {
@@ -746,6 +760,8 @@ test( "extern evaluation", function() {
 	
 	strictEqual( rea.valueOf(), 5, "rea.valueOf()" );
 	strictEqual( rea.toString(), "rea = 5", "rea.toString()" );
+	
+	react( "delete rea" );
 } );
 
 test( "extern delete", function() {
@@ -933,31 +949,60 @@ test( "operator assignments", function() {
 module( "Operators applied on variables" );
 
 test( "not", function() {
+	var t = react.leak( "t = true" ),
+		f = react.leak( "f = false" ),
+		foo  = react.leak( "foo = 'foo'" );
+	
 	ok( compare( react.leak( "no partOf", "!foo" ), [ "!", foo ] ), "react( \"!foo\" )" );
 	ok( compare( react.leak( "no partOf", "!!foo" ), [ "!", [ "!", foo ] ] ), "react( \"!!foo\" )" );
 	ok( compare( react.leak( "no partOf", "!!!foo" ), [ "!", foo ] ), "react( \"!!!foo\" )" );
 	ok( compare( react.leak( "no partOf", "!(t || f)" ), [ "!", [ "||", t, f ] ] ), "react( \"!(t || f)\" )" );
+	
+	react( "clean" )
 } );
 
 test( "and", function() {
+	var t = react.leak( "t = true" ),
+		f = react.leak( "f = false" ),
+		x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" ),
+		foo  = react.leak( "foo = 'foo'" );
+	
 	ok( react.leak( "no partOf", "5 && foo" ) === foo, "lit && ref/arr: react( \"5 && foo\" )" );
 	ok( compare( react.leak( "no partOf", "t && f" ), [ "&&", t, f ] ), "ref && lit/ref: react( \"t && f\" )" );
 	ok( compare( react.leak( "no partOf", "( t && f ) && x" ), [ "&&", t, f, x ] ), "arr && lit/ref: react( \"( t && f ) && x\" )" );
 	ok( compare( react.leak( "no partOf", "t && ( f && x )" ), [ "&&", t, f, x ] ), "ref && arr: react( \"t && ( f && x )\" )" );
 	ok( compare( react.leak( "no partOf", "( t && f ) && ( x && y )" ), [ "&&", t, f, x, y ] ), "arr && arr (same op): react( \"( t && f ) && ( x && y )\" )" );
 	ok( compare( react.leak( "no partOf", "( t || f ) && ( x || y )" ), [ "&&", [ "||", t, f ], [ "||", x, y ] ] ), "arr && arr (diff op): react( \"( t || f ) && ( x || y )\" )" );
+	
+	react( "clean" )
 } );
 
 test( "or", function() {
+	var t = react.leak( "t = true" ),
+		f = react.leak( "f = false" ),
+		x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" ),
+		foo  = react.leak( "foo = 'foo'" );
+	
 	strictEqual( react.leak( "no partOf", "5 || foo" ), 5, "lit || ref/arr: react( \"5 || foo\" )" );
 	ok( compare( react.leak( "no partOf", "t || f" ), [ "||", t, f ] ), "ref || lit/ref: react( \"t || f\" )" );
 	ok( compare( react.leak( "no partOf", "( t || f ) || x" ), [ "||", t, f, x ] ), "arr || lit/ref: react( \"( t || f ) || x\" )" );
 	ok( compare( react.leak( "no partOf", "t || ( f || x )" ), [ "||", t, f, x ] ), "ref || arr: react( \"t || ( f || x )\" )" );
 	ok( compare( react.leak( "no partOf", "( t || f ) || ( x || y )" ), [ "||", t, f, x, y ] ), "arr || arr (same op): react( \"( t || f ) || ( x || y )\" )" );
 	ok( compare( react.leak( "no partOf", "( t && f ) || ( x && y )" ), [ "||", [ "&&", t, f ], [ "&&", x, y ] ] ), "arr || arr (diff op): react( \"( t && f ) || ( x && y )\" )" );
+	
+	react( "clean" )
 } );
 
 test( "(in)equalities, smaller, greater (all behave in the same way)", function() {
+	var t = react.leak( "t = true" ),
+		f = react.leak( "f = false" ),
+		x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" ),
+		zero = react.leak( "zero = 0" ),
+		one  = react.leak( "one = 1" );
+	
 	ok( compare( react.leak( "no partOf", "true == f" ), [ "==", true, f ] ), "lit == ref: react( \"true == f\" )" );
 	ok( compare( react.leak( "no partOf", "10 !== (x && y)" ), [ "!", [ "===", 10, [ "&&", x, y ] ] ] ), "lit !== arr: react( \"10 !== (x && y)\" )" );
 	ok( compare( react.leak( "no partOf", "t != false" ), [ "!", [ "==", t, false ] ] ), "ref != lit: react( \"t != false\" )" );
@@ -966,12 +1011,17 @@ test( "(in)equalities, smaller, greater (all behave in the same way)", function(
 	ok( compare( react.leak( "no partOf", "(x && y) < 10" ), [ "<", [ "&&", x, y ], 10 ] ), "arr < lit: react( \"(x && y) < 10\" )" );
 	ok( compare( react.leak( "no partOf", "(x && y) <= zero" ), [ "||", [ "<", [ "&&", x, y ], zero ], [ "==", [ "&&", x, y ], zero ] ] ), "arr <= ref: react( \"(x && y) <= zero\" )" );
 	ok( compare( react.leak( "no partOf", "(x && y) >= (zero && one)" ), [ "||", [ ">", [ "&&", x, y ], [ "&&", zero, one ] ], [ "==", [ "&&", x, y ], [ "&&", zero, one ] ] ] ), "arr >= arr: react( \"(x && y) >= (zero && one)\" )" );
+	
+	react( "clean" )
 } );
 
 test( "in", function() {
-	var objLit = {},
-		obj = react.leak( "obj = ", objLit ),
+	var u = react.leak( "u = undefined" ),
+		t = react.leak( "t = true" ),
 		prop = react.leak( "prop = 'prop'" );
+		
+	var objLit = {},
+		obj = react.leak( "obj = ", objLit );
 	
 	ok( objLit, "objLit = {}" );
 	ok( obj, "react( \"obj = \", {} )" );
@@ -986,9 +1036,14 @@ test( "in", function() {
 	ok( compare( react.leak( "no partOf", "( t ? prop : u ) in obj" ), [ "in", [ "?", t, [ ":", prop, u ] ], obj ] ), "arr in ref: react( \"( t ? prop : u ) in obj\" )" );
 	ok( compare( react.leak( "no partOf", "( t ? prop : u ) in ( t ? obj : u )" ), [ "in", [ "?", t, [ ":", prop, u ] ], [ "?", t, [ ":", obj, u ] ] ] ), "arr in ref: react( \"( t ? prop : u ) in ( t ? obj : u )\" )" );
 	react( "delete prop" );
+	
+	react( "clean" )
 } );
 
 test( "instanceof", function() {
+	var u = react.leak( "u = undefined" ),
+		t = react.leak( "t = true" );
+	
 	var instLit = {},
 		inst = react.leak( "inst = ", instLit ),
 		ObjLit = Object,
@@ -1007,23 +1062,39 @@ test( "instanceof", function() {
 	ok( compare( react.leak( "no partOf", "( t ? inst : u ) instanceof", ObjLit ), [ "instanceof", [ "?", t, [ ":", inst, u ] ], ObjLit ] ), "arr instanceof lit: react( \"( t ? inst : u ) instanceof\", ObjLit )" );
 	ok( compare( react.leak( "no partOf", "( t ? inst : u ) instanceof Obj" ), [ "instanceof", [ "?", t, [ ":", inst, u ] ], Obj ] ), "arr instanceof ref: react( \"( t ? inst : u ) instanceof Obj\" )" );
 	ok( compare( react.leak( "no partOf", "( t ? inst : u ) instanceof ( t ? Obj : u )" ), [ "instanceof", [ "?", t, [ ":", inst, u ] ], [ "?", t, [ ":", Obj, u ] ] ] ), "arr instanceof arr: react( \"( t ? inst : u ) instanceof ( t ? Obj : u )\" )" );
+	
+	react( "clean" )
 } );
 
 test( "basic addition with 0", function() {
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" );
+	
 	ok( react.leak( "no partOf", "x + 0" ) === x, "react( \"x + 0\" )" );
 	ok( compare( react.leak( "no partOf", "(x + y) + 0" ), [ "+", x, y ] ), "(x + y) + 0 = x + y" );
+	
+	react( "clean" )
 } );
 
 test( "basic addition", function() {
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" ),
+		one  = react.leak( "one = 1" );
+	
 	ok( compare( react.leak( "no partOf", "5 + x" ), [ "+", 5, x ] ), "lit + ref: react( \"5 + x\" )" );
 	ok( compare( react.leak( "no partOf", "x + 5" ), [ "+", x, 5 ] ), "ref + lit: react( \"x + 5\" )" );
 	ok( compare( react.leak( "no partOf", "x + y" ), [ "+", x, y ] ), "ref + ref: react( \"x + y\" )" );
 	ok( compare( react.leak( "no partOf", "x + ( one + y )" ), [ "+", x, one, y ] ), "ref + arr: react( \"x + ( one + y )\" )" );
 	ok( compare( react.leak( "no partOf", "( one + y ) + x" ), [ "+", one, y, x ] ), "arr + ref: react( \"( one + y ) + x\" )" );
 	ok( compare( react.leak( "no partOf", "( one + y ) + ( 5 + x )" ), [ "+", one, y, 5, x ] ), "arr + ref: react( \"( one + y ) + ( 5 + x )\" )" );
+	
+	react( "clean" )
 } );
 
 test( "basic multiplication with 1 and 0", function() {
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" );
+	
 	ok( react.leak( "no partOf", "1*x" ) === x, "1*x = x" );
 	
 	ok( compare( react.leak( "no partOf", "1*x*y" ), [ "*", x, y ] ), "1*x*y = x*y" );
@@ -1031,54 +1102,94 @@ test( "basic multiplication with 1 and 0", function() {
 	strictEqual( react.leak( "no partOf", "0*x" ), 0, "0*x = 0" );
 	strictEqual( react.leak( "no partOf", "0*x*y" ), 0, "0*x*y = 0" );
 	strictEqual( react.leak( "no partOf", "0*(x+y)" ), 0, "0*(x+y) = 0" );
+	
+	react( "clean" )
 } );
 
 test( "basic multiplication", function() {
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" ),
+		one  = react.leak( "one = 1" );
+	
 	ok( compare( react.leak( "no partOf", "5 * x" ), [ "*", 5, x ] ), "lit * ref: react( \"5 * x\" )" );
 	ok( compare( react.leak( "no partOf", "x * 5" ), [ "*", 5, x ] ), "ref * lit: react( \"x * 5\" )" );
 	ok( compare( react.leak( "no partOf", "x * y" ), [ "*", x, y ] ), "ref * ref: react( \"x * y\" )" );
 	ok( compare( react.leak( "no partOf", "x * ( one * y )" ), [ "*", x, one, y ] ), "ref * arr: react( \"x * ( one * y )\" )" );
 	ok( compare( react.leak( "no partOf", "( one * y ) * x" ), [ "*", one, y, x ] ), "arr * ref: react( \"( one * y ) * x\" )" );
 	ok( compare( react.leak( "no partOf", "( one * y ) * ( 5 * x )" ), [ "*", 5, one, y, x ] ), "arr * arr: react( \"( one * y ) * ( 5 * x )\" )" );
+	
+	react( "clean" )
 } );
 
 test( "string catenation", function() {
+	var foo  = react.leak( "foo = 'foo'" ),
+		bar  = react.leak( "bar = 'bar'" );
+	
 	ok( compare( react.leak( "no partOf", "foo + foo" ), [ "+", foo, foo ] ), "foo + foo" );
 	ok( compare( react.leak( "no partOf", "foo + ( foo + bar )" ), [ "+", foo, foo, bar ] ), "foo + ( foo + bar )" );
 	ok( compare( react.leak( "no partOf", "foo + ( bar + foo )" ), [ "+", foo, bar, foo ] ), "foo + ( bar + foo )" );
 	ok( compare( react.leak( "no partOf", "( foo + bar ) + foo" ), [ "+", foo, bar, foo ] ), "( foo + bar ) + foo" );
 	ok( compare( react.leak( "no partOf", "( bar + foo ) + foo" ), [ "+", bar, foo, foo ] ), "( bar + foo ) + foo" );
+	
+	react( "clean" )
 } );
 
 test( "more addition: non-+-Arrays", function() {
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" ),
+		one  = react.leak( "one = 1" );
+	
 	ok( compare( react.leak( "no partOf", "( one * y ) + x" ), [ "+", [ "*", one, y ], x ] ), "arr + ref: react( \"( one * y ) + x\" )" );
 	ok( compare( react.leak( "no partOf", "( one * y ) + ( 5 + x )" ), [ "+", [ "*", one, y ], 5, x ] ), "arr + arr: react( \"( one * y ) + ( 5 + x )\" )" );
 	ok( compare( react.leak( "no partOf", "( one + y ) + ( 5 * x )" ), [ "+", one, y, [ "*", 5, x ] ] ), "arr + arr: react( \"( one + y ) + ( 5 * x )\" )" );
 	ok( compare( react.leak( "no partOf", "( one * y ) + ( 5 * x )" ), [ "+", [ "*", one, y ], [ "*", 5, x ] ] ), "arr + arr: react( \"( one * y ) + ( 5 * x )\" )" );
+	
+	react( "clean" )
 } );
 
 test( "more addition: factor out doubles", function() {
+	var x = react.leak( "x = 2.6" ),
+		one  = react.leak( "one = 1" );
+	
 	ok( compare( react.leak( "no partOf", "( one + 5 ) + ( 5 + x )" ), [ "+", one, 10, x ] ), "( one + 5 ) + ( 5 + x ) = one + 10 + x" );
+	
+	react( "clean" )
 } );
 
 test( "more addition: factor out single + double", function() {	
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" );
+	
 	ok( compare( react.leak( "no partOf", "x + ( x * y )" ), [ "*", x, [ "+", 1, y ] ] ), "x + ( x * y ) = x * ( 1 + y )" );
 	ok( compare( react.leak( "no partOf", "x + ( y * x )" ), [ "*", [ "+", 1, y ], x ] ), "x + ( y * x ) = ( 1 + y ) * x" );
 	ok( compare( react.leak( "no partOf", "( x * y ) + x" ), [ "*", x, [ "+", y, 1 ] ] ), "( x * y ) + x = x * ( y + 1 )" );
 
 	ok( compare( react.leak( "no partOf", "( y * x ) + x" ), [ "*", [ "+", y, 1 ], x ] ), "( y * x ) + x = ( y + 1 ) * x" );
+	
+	react( "clean" )
 } );
 
 test( "more addition: factor out double + double", function() {	
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" ),
+		zero = react.leak( "zero = 0" ),
+		one  = react.leak( "one = 1" );
+	
 	ok( compare( react.leak( "no partOf", "( 3 * x ) + ( x * y )" ), [ "*", x, [ "+", 3, y ] ] ), "( 3 * x ) + ( x * y ) = x * ( 3 + y )" );
 	ok( compare( react.leak( "no partOf", "( 3 * x ) + ( 2 * x )" ), [ "*", 5, x ] ), "( 3 * x ) + ( 2 * x ) = 5 * x" );
 	ok( compare( react.leak( "no partOf", "( y * x ) + ( 2 * x )" ), [ "*", [ "+", y, 2 ], x ] ), "( y * x ) + ( 2 * x ) = ( y + 2 ) * x" );
 	ok( compare( react.leak( "no partOf", "( 3 * x ) + ( y * x )" ), [ "*", [ "+", 3, y ], x ] ), "( 3 * x ) + ( y * x ) = ( 3 + y ) * x" );
 	ok( compare( react.leak( "no partOf", "( one * x ) + ( x * y )" ), [ "+", [ "*", one, x ], [ "*", x, y ] ] ), "( one * x ) + ( x * y ) = ( one * x ) + ( x * y )" );
 	ok( compare( react.leak( "no partOf", "( x * one * y ) + ( x * zero * y )" ), [ "*", x, [ "+", one, zero ], y ] ), "( x * one * y ) + ( x * zero * y ) = x * ( one + zero ) * y" );
+	
+	react( "clean" )
 } );
 
 test( "subtraction", function() {
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" ),
+		one  = react.leak( "one = 1" );
+	
 	strictEqual( react.leak( "no partOf", "x - x" ), 0, "x - x = 0" );
 	
 	ok( react.leak( "no partOf", "(x + y) - y" ) === x, "( x + y ) - y = x" );
@@ -1087,9 +1198,14 @@ test( "subtraction", function() {
 	ok( compare( react.leak( "no partOf", "x - y" ), [ "+", x, [ "*", -1, y ] ] ), "x - y = x + ( -1 * y )" );
 	ok( compare( react.leak( "no partOf", "x - 5 - y" ), [ "+", x, -5, [ "*", -1, y ] ] ), "x - 5 - y = x - 5 + ( -1 * y )" );
 	ok( compare( react.leak( "no partOf", "x - ( one + y )" ), [ "+", x, [ "*", -1, [ "+", one, y ] ] ] ), "x - ( one + y ) = x + ( -1 * ( one + y ) )" );
+	
+	react( "clean" )
 } );
 
 test( "basic exponentiation with 1 and 0", function() {
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" );
+	
 	strictEqual( react.leak( "no partOf", "x^0" ), 1, "react( \"x^0\" )" );
 	ok( react.leak( "no partOf", "x^1" ) === x, "react( \"x^1\" )" );
 	strictEqual( react.leak( "no partOf", "0^x" ), 0, "react( \"0^x\" )" );
@@ -1099,9 +1215,16 @@ test( "basic exponentiation with 1 and 0", function() {
 	ok( compare( react.leak( "no partOf", "(x^y)^1" ) , [ "^", x, y ] ), "(x^y)^1" );
 	strictEqual( react.leak( "no partOf", "0^(x^y)" ), 0, "react( \"0^(x^y)\" )" );
 	strictEqual( react.leak( "no partOf", "1^(x^y)" ), 1, "react( \"1^(x^y)\" )" );
+	
+	react( "clean" )
 } );
 
 test( "basic exponentiation", function() {	
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" ),
+		zero = react.leak( "zero = 0" ),
+		one  = react.leak( "one = 1" );
+	
 	ok( compare( react.leak( "no partOf", "x^2" ), [ "^", x, 2 ] ), "x^2" );
 	ok( compare( react.leak( "no partOf", "2^x" ), [ "^", 2, x ] ), "2^x" );
 	ok( compare( react.leak( "no partOf", "x^y" ), [ "^", x, y ] ), "x^y" );
@@ -1111,18 +1234,29 @@ test( "basic exponentiation", function() {
 	ok( compare( react.leak( "no partOf", "(x^y)^one" ), [ "^", [ "^", x, y ], one ] ), "(x^y)^one" );
 	ok( compare( react.leak( "no partOf", "(x^y)^(one^zero)" ), [ "^", [ "^", x, y ], one, zero ] ), "(x^y)^(one^zero)" );
 	ok( compare( react.leak( "no partOf", "x^(y^one)^zero" ), [ "^", x, [ "^", y, one ], zero ] ), "x^(y^one)^zero" );
+	
+	react( "clean" )
 } );
 
 test( "more addition: add powers of x", function() {
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" );
+	
 	ok( compare( react.leak( "no partOf", "x^2 + x^4" ), [ "*", [ "^", x, 2 ], [ "+", 1, [ "^", x, 2 ] ] ] ), "x^2 + x^4 = x^2 * ( 1 + x^2 )" );
 	ok( compare( react.leak( "no partOf", "x^-4 + x^-6" ), [ "*", [ "^", x, -4 ], [ "+", 1, [ "^", x, -2 ] ] ] ), "x^-4 + x^-6 = x^-4 * ( 1 + x^-6 )" );
 	ok( compare( react.leak( "no partOf", "x^-4 + x^4" ), [ "+", [ "^", x, -4 ], [ "^", x, 4 ] ] ), "x^-4 + x^4" );
 	ok( compare( react.leak( "no partOf", "x^2 + x^4*y" ), [ "*", [ "^", x, 2 ], [ "+", 1, [ "*", [ "^", x, 2 ], y ] ] ] ), "x^2 + x^4*y = x^2 * ( 1 + x^2*y )" );
 	ok( compare( react.leak( "no partOf", "x^y + x^4" ), [ "+", [ "^", x, y ], [ "^", x, 4 ] ] ), "x^y + x^4" );
 	ok( compare( react.leak( "no partOf", "x^y + x^y" ), [ "*", 2, [ "^", x, y ] ] ), "x^y + x^y = 2 * x^y" );
+	
+	react( "clean" )
 } );
 
 test( "more multiplication: factor out doubles", function() {
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" ),
+		one  = react.leak( "one = 1" );
+	
 	ok( compare( react.leak( "no partOf", "( one * 5 ) * ( 5 * x )" ), [ "*", 25, one, x ] ), "( one * 5 ) * ( 5 * x ) = 25 * one * x" );
 	ok( compare( react.leak( "no partOf", "( 6 * one ) * ( 5 * x )" ), [ "*", 30, one, x ] ), "( 6 * one ) * ( 5 * x ) = 30 * one * x" );
 	ok( compare( react.leak( "no partOf", "x * x" ), [ "^", x, 2 ] ), "x * x = x^2" );
@@ -1131,22 +1265,40 @@ test( "more multiplication: factor out doubles", function() {
 	ok( compare( react.leak( "no partOf", "x * ( y * x )" ), [ "*", x, y, x ] ), "x * ( y * x ) = x * y * x" );
 	ok( compare( react.leak( "no partOf", "( x * y ) * x" ), [ "*", x, y, x ] ), "( x * y ) * x = x * y * x" );
 	ok( compare( react.leak( "no partOf", "( y * x ) * x" ), [ "*", y, [ "^", x, 2 ] ] ), "( y * x ) * x = y * x^2" );
+	
+	react( "clean" )
 } );
 
 test( "more multiplication: factor out base/exponent", function() {
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" ),
+		one  = react.leak( "one = 1" );
+	
 	ok( compare( react.leak( "no partOf", "( x ^ y ) * ( x ^ one )" ), [ "^", x, [ "+", y, one ] ] ), "( x ^ y ) * ( x ^ one ) = x^( y + one )" );
 	ok( compare( react.leak( "no partOf", "( x ^ one ) * ( y ^ one )" ), [ "^", [ "*", x, y ], one ] ), "( x ^ one ) * ( y ^ one ) = ( x * y )^one" );
+	
+	react( "clean" )
 } );
 
 test( "more multiplication: factor out single + double", function() {	
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" );
+	
 	ok( compare( react.leak( "no partOf", "x * ( x ^ y )" ), [ "^", x, [ "+", 1, y ] ] ), "x * ( x ^ y ) = x^( 1 + y )" );
 	ok( compare( react.leak( "no partOf", "x * ( y ^ x )" ), [ "*", x, [ "^", y, x ] ] ), "x * ( y ^ x ) = x * y^x" );
 	ok( compare( react.leak( "no partOf", "( x ^ y ) * x" ), [ "^", x, [ "+", y, 1 ] ] ), "( x ^ y ) * x = x^( y + 1 )" );
 
 	ok( compare( react.leak( "no partOf", "( y ^ x ) * x" ), [ "*", [ "^", y, x ], x ] ), "( y ^ x ) * x = y^x * x" );
+	
+	react( "clean" )
 } );
 
 test( "more multiplication: factor out double + double", function() {	
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" ),
+		zero = react.leak( "zero = 0" ),
+		one  = react.leak( "one = 1" );
+	
 	ok( compare( react.leak( "no partOf", "x^3 * x^y" ), [ "^", x, [ "+", 3, y ] ] ), "x^3 * x^y = x^( 3 + y )" );
 	ok( compare( react.leak( "no partOf", "x^3 * x^2" ), [ "^", x, 5 ] ), "x^3 * x^2 = x^5" );
 	ok( compare( react.leak( "no partOf", "y^x * 2^x" ), [ "^", [ "*", 2, y ], x ] ), "y^x * 2^x = ( 2 * y )^x" );
@@ -1154,9 +1306,15 @@ test( "more multiplication: factor out double + double", function() {
 	;
 	ok( compare( react.leak( "no partOf", "x^one^y * x^zero^y" ), [ "^", x, [ "+", [ "^", one, y ], [ "^", zero, y ] ] ] ), "x^one^y * x^zero^y = x^( one^y + zero^y )" );
 	ok( compare( react.leak( "no partOf", "x * ( one * y ) * x" ), [ "*", x, one, y, x ] ), "react( \"x * ( one * y ) * x\" )" );
+	
+	react( "clean" )
 } );
 
 test( "division", function() {
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" ),
+		one  = react.leak( "one = 1" );
+	
 	strictEqual( react.leak( "no partOf", "x / x" ), 1, "x / x = 1" );
 	ok( react.leak( "no partOf", "(x * y) / y" ) === x, "( x * y ) / y = x" );
 	
@@ -1165,9 +1323,16 @@ test( "division", function() {
 	ok( compare( react.leak( "no partOf", "( x * one * y ) / y" ), [ "*", x, one ] ), "( x * y * one ) / y = x * one" );
 	ok( compare( react.leak( "no partOf", "x / 5 / y" ), [ "*", 1/5, x, [ "^", y, -1 ] ] ), "x / 5 / y = 0.2 * x * y^-1" );
 	ok( compare( react.leak( "no partOf", "x / ( 5 * y )" ), [ "*", x, [ "^", [ "*", 5, y ], -1 ] ] ), "x / ( 5 * y ) = x * ( 5 * y )^-1" );
+	
+	react( "clean" )
 } );
 
 test( "modulus", function() {	
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" ),
+		zero = react.leak( "zero = 0" ),
+		one  = react.leak( "one = 1" );
+	
 	strictEqual( react.leak( "no partOf", "0 % x" ), 0, "react( \"0 % x\" )" );
 	strictEqual( react.leak( "no partOf", "x % x" ), 0, "react( \"x % x\" )" );
 	ok( isNaN( react.leak( "no partOf", "x % 0" ) ), "isNaN( react( \"x % 0\" ) )" );
@@ -1177,42 +1342,76 @@ test( "modulus", function() {
 	ok( compare( react.leak( "no partOf", "x % y % one" ), [ "%", x, y, one ] ), "react( \"x % y % one\" )" );
 	ok( compare( react.leak( "no partOf", "x % ( y % one )" ), [ "%", x, y, one ] ), "react( \"x % ( y % one )\" )" );
 	ok( compare( react.leak( "no partOf", "( x % zero ) % ( y % one )" ), [ "%", x, zero, y, one ] ), "react( \"( x % zero ) % ( y % one )\" )" );
+	
+	react( "clean" )
 } );
 
 test( "ternary operator", function() {
+	var t = react.leak( "t = true" ),
+		x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" );
+	
 	ok( compare( react.leak( "no partOf", "t ? x : y" ), [ "?", t, [ ":", x, y ] ] ), "react( \"t ? x : y\" )" );
+	
+	react( "clean" )
 } );
 
 test( "conversion", function() {
+	var t = react.leak( "t = true" ),
+		x = react.leak( "x = 2.6" );
+	
 	ok( compare( react.leak( "no partOf", "+t" ), [ "+", t ] ), "react( \"+t\" )" );
 	ok( compare( react.leak( "no partOf", "+(x+t)" ), [ "+", [ "+", x, t ] ] ), "react( \"+(x+t)\" )" );
 	ok( compare( react.leak( "no partOf", "++(x+t)" ), [ "+", [ "+", x, t ] ] ), "react( \"++(x+t)\" )" );
+	
+	react( "clean" )
 } );
 
 test( "negation", function() {
+	var t = react.leak( "t = true" ),
+		x = react.leak( "x = 2.6" );
+	
 	ok( compare( react.leak( "no partOf", "-t" ), [ "*", -1, t ] ), "react( \"-t\" ) = -1 * t" );
 	
 	ok( compare( react.leak( "no partOf", "-(x+t)" ), [ "*", -1, [ "+", x, t ] ] ), "react( \"-(x+t)\" ) = -1 * (x+t)" );
 	ok( compare( react.leak( "no partOf", "--(x+t)" ), [ "+", x, t ] ), "react( \"--(x+t)\" ) = x+t" );
+	
+	react( "clean" )
 } );
 
 test( "typeof", function() {
+	var x = react.leak( "x = 2.6" ),
+		foo  = react.leak( "foo = 'foo'" );
+	
 	ok( compare( react.leak( "no partOf", "typeof x" ), [ "typeof", x ] ), "typeof ref: react( \"typeof x\" )" );
 	ok( compare( react.leak( "no partOf", "typeof (x+foo)" ), [ "typeof", [ "+", x, foo ] ] ), "typeof arr: react( \"typeof (x+foo)\" )" );
 	strictEqual( react.leak( "no partOf", "typeof typeof x" ), "string", "react( \"typeof typeof x\" )" );
+	
+	react( "clean" )
 } );
 
 test( "#", function() {
+	var x = react.leak( "x = 2.6" ),
+		foo  = react.leak( "foo = 'foo'" );
+	
 	strictEqual( react.leak( "no partOf", "#x" ), x._value.value, "#ref: react( \"#x\" )" );
 	strictEqual( react.leak( "no partOf", "#(x+foo)" ), x._value.value + foo._value.value, "#arr: react( \"#(x+foo)\" )" );
 	
 	strictEqual( react.leak( "no partOf", "##x" ), x._value.value, "react( \"##x\" )" );
+	
+	react( "clean" )
+	
+	react( "clean" )
 } );
 
 
 module( "Variables with complex values composed of other variables (named and anonymous)" );
 
 test( "assignment", function() {
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" ),
+		one  = react.leak( "one = 1" );
+	
 	var rea = react.leak( "rea = x+y" ),
 		z, z2,
 		anonym = react.leak( "x+y" );
@@ -1264,9 +1463,14 @@ test( "assignment", function() {
 	}() ), "react.js | a is not defined.", "react( \"z = a+10\" ) -> exception" );
 	
 	react( "delete z; delete z2;" );
+	
+	react( "clean" )
 } );
 
 test( "delete", function() {
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" );
+	
 	var rea = react.leak( "rea = x+y" ),
 		reb = react.leak( "reb = rea+10" ),
 		key = rea._value.value._guid;
@@ -1290,9 +1494,20 @@ test( "delete", function() {
 	ok( react( "delete", rea ), "react( \"delete\", rea )" );
 	ok( !(key in x._partOf), "x is no longer a part of rea." );
 	ok( !(key in y._partOf), "y is no longer a part of rea." );
+	
+	react( "clean" )
 } );
 
 test( "clean", function() {
+	var t = react.leak( "t = true" ),
+		f = react.leak( "f = false" ),
+		x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" ),
+		zero = react.leak( "zero = 0" ),
+		one  = react.leak( "one = 1" ),
+		foo  = react.leak( "foo = 'foo'" ),
+		bar  = react.leak( "bar = 'bar'" );
+	
 	var rea = react.leak( "rea = x+y" ),
 		reb = react.leak( "reb = rea+10" ),
 		rec = react.leak( "rec = rea+'foo'" ),
@@ -1306,10 +1521,8 @@ test( "clean", function() {
 	
 	ok( react( obj, ".prop = rea" ), "react( obj, \".prop = rea\" )" );
 	
-	ok( react( "cleanExcept u, n, t, f, x, y, foo, bar, zero, one" ), "react( \"cleanExcept u, n, t, f, x, y, foo, bar, zero, one\" )" );
+	ok( react( "cleanExcept t, f, x, y, foo, bar, zero, one" ), "react( \"cleanExcept t, f, x, y, foo, bar, zero, one\" )" );
 	
-	ok( u.hasOwnProperty( "_value" ), "u has not been deleted" );
-	ok( n.hasOwnProperty( "_value" ), "n has not been deleted" );
 	ok( t.hasOwnProperty( "_value" ), "t has not been deleted" );
 	ok( f.hasOwnProperty( "_value" ), "f has not been deleted" );
 	ok( x.hasOwnProperty( "_value" ), "x has not been deleted" );
@@ -1330,29 +1543,26 @@ test( "clean", function() {
 	
 	ok( isEmptyObj( react.leak.nameTable.table, true ), "all variables deleted" );
 	
-	//restore deleted variables
-	u = react.leak( "u = undefined" );
-	n = react.leak( "n = null" );
-	t = react.leak( "t = true" );
-	f = react.leak( "f = false" );
-	x = react.leak( "x = 2.6" );
-	y = react.leak( "y = 7.4" );
-	zero = react.leak( "zero = 0" );
-	one  = react.leak( "one = 1" );
-	foo  = react.leak( "foo = 'foo'" );
-	bar  = react.leak( "bar = 'bar'" );
+	react( "clean" )
 } );
 
 test( "calculate with extern variables", function() {
+	var x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" );
+	
 	var anonym = react.leak( "no partOf", x, "+", y ),
 		anonym2 = react.leak( "no partOf", anonym, "*5" );
 	
 	ok( compare( anonym, [ "+", x, y ] ), "calc with named variable: react( x, \"+\", y )" );
 	ok( compare( anonym2, [ "*", 5, anonym ] ), "calc with anonymous variable: react( anonym, \"*5\" )" );
 	react( "delete", anonym, "; delete", anonym2 );
+	
+	react( "clean" )
 } );
 
 test( "operator assignments", function() {
+	var x = react.leak( "x = 2.6" );
+	
 	var z = react.leak( "z = 5" ),
 		anonym = react.leak( "no partOf", "5+x" );
 	
@@ -1407,9 +1617,14 @@ test( "operator assignments", function() {
 	ok( compare( z._value.value, [ "==", zVal, "bar" ] ), "operator assignment separator: react( \"z ==.= 'bar'\" )" );
 	
 	react( "delete func; delete obj; delete z; delete", anonym );
+	
+	react( "clean" )
 } );
 
 test( "evaluation before and after modifying a part", function() {
+	var t = react.leak( "t = true" ),
+		x = react.leak( "x = 2.6" );
+	
 	var r1 = react.leak( "r1 = x+t" ),
 		xpt = x.valueOf() + t.valueOf();
 	
@@ -1430,9 +1645,15 @@ test( "evaluation before and after modifying a part", function() {
 	strictEqual( r1._evaled.string, undefined, "r1._evaled.string after modified part" );
 	
 	react( "delete r1" );
+	
+	react( "clean" )
 } );
 
 test( "string output", function() {
+	var t = react.leak( "t = true" ),
+		x = react.leak( "x = 2.6" ),
+		one = react.leak( "one = 1" );
+	
 	var anonym = react.leak( "x+t" ),
 		named = react.leak( "named = ", anonym, " + one" );
 	
@@ -1443,6 +1664,8 @@ test( "string output", function() {
 	strictEqual( named.toString(), "named = {x + t} + one", "named.toString()" );
 	
 	react( "delete named; delete", anonym );
+	
+	react( "clean" )
 } );
 
 
@@ -1468,10 +1691,15 @@ test( "assign object property to variable", function() {
 	ok( react( obj, ".prop = 'boolean'" ), "react( obj, \".prop = 'boolean'\" )" );
 	strictEqual( react( "rea" ), "boolean", "react( \"rea\" )" );
 	
+	//FIXME: should "clean" also clean up unused object property paths?
 	react( "clean" );
+	react( "~", obj, ".prop" );
 } );
 
 test( "property access: object is literal, property paths are variables, literals and other property paths", function() {
+	var foo  = react.leak( "foo = 'foo'" ),
+		bar  = react.leak( "bar = 'bar'" );
+	
 	var sObj = { fst : 1, snd : 2, foo : { bar : "foo" } };
 	
 	ok( sObj, "sObj = { fst : 1, snd : 2, foo : { bar : \"foo\" } }" );
@@ -1486,6 +1714,9 @@ test( "property access: object is literal, property paths are variables, literal
 } );
 
 test( "property access: object is variable, property paths are variables, literals and other property paths", function() {	
+	var foo  = react.leak( "foo = 'foo'" ),
+		bar  = react.leak( "bar = 'bar'" );
+	
 	var obj  = react.leak( "obj = ", { foo : { bar : "bar" }, fst : 1, snd : 2 } );
 	
 	ok( obj, "obj = react.leak( \"obj = \", { foo : { bar : \"bar\" }, fst : 1, snd : 2 } )" );
@@ -2464,6 +2695,7 @@ test( "call w/o return value: function is literal, argument is Expression", func
 			foo = arg1;
 		},
 		r = react.leak( "r = 50" ),
+		x = react.leak( "x = 2.6" ),
 		rpx,
 		call = react.leak( func, "( r+x )" );
 	
@@ -2488,7 +2720,7 @@ test( "call w/o return value: function is literal, argument is Expression", func
 	
 	strictEqual( foo, rpx, "foo" );
 	
-	react( "delete r" );
+	react( "delete r; delete x" );
 } ); 
 
 test( "call w/o return value: function is literal, argument is object path", function() {
@@ -2620,6 +2852,9 @@ test( "call w/o return value: function is literal, arguments are variable/litera
 } );
 
 test( "registering :() and deregistering ~ call", function() {
+	var t = react.leak( "t = true" ),
+		x = react.leak( "x = 2.6" );
+	
 	var r1 = react.leak( "x+t" ),
 		r1_func1_val, r1_func2_val, r1_func3_val,
 		order = 0,
@@ -2656,10 +2891,12 @@ test( "registering :() and deregistering ~ call", function() {
 	
 	ok( isEmptyObj( r1._partOf ), "All r1 has been unregistered from all functions." );
 	
-	react( "delete", r1 );
+	react( "delete", r1, "; delete x; delete t" );
 } );
 
 test( "call w/ return value: return value used, but not in an assignment", function() {
+	var x = react.leak( "x = 2.6" );
+	
 	var sqrFunc = function( x ) { return xSqr = x.valueOf()*x.valueOf() },
 		xSqr,
 		sqr = react.leak( "sqr = ", sqrFunc );
@@ -2691,10 +2928,12 @@ test( "call w/ return value: return value used, but not in an assignment", funct
 	ok( isEmptyObj( sqr._partOf ), "isEmptyObj( sqr._partOf )" );
 	ok( isEmptyObj( x._partOf ), "isEmptyObj( x._partOf )" );
 	
-	react( "delete sqr" );
+	react( "delete sqr; delete x" );
 } );
 
 test( "call w/ return value: return value stored in a variable", function() {
+	var x = react.leak( "x = 2.6" );
+	
 	var sqrFunc = function( x ) { return xSqr = x.valueOf()*x.valueOf() },
 		xSqr,
 		sqr = react.leak( "sqr = ", sqrFunc ),
@@ -2743,7 +2982,7 @@ test( "call w/ return value: return value stored in a variable", function() {
 	ok( isEmptyObj( sqr._partOf ), "isEmptyObj( sqr._partOf )" );
 	ok( isEmptyObj( x._partOf ), "isEmptyObj( x._partOf )" );
 	
-	react( "delete sqr" );
+	react( "delete sqr; delete x" );
 } );
 
 
@@ -2856,6 +3095,8 @@ test( "operator overloading", function() {
 } );
 
 test( "custom datatype", function() {
+	var x = react.leak( "x = 2.6" );
+	
 	//example custom datatype
 	var Type = function( input ) {
 		//react() cannot explicitly call a function as constructor. Therefore, to use 
@@ -2892,13 +3133,16 @@ test( "custom datatype", function() {
 	
 	react( "~Type( 1235813 ); ~", Type, "( x ); " );
 	
-	react( "delete inst2; delete inst; delete Type;" );
+	react( "delete inst2; delete inst; delete Type; delete x" );
 } );
 
 
 module( "Context sensitive variables" );
 
 test( "simple context variables with function", function() {
+	var f = react.leak( "f = false" ),
+		x = react.leak( "x = 2.6" );
+	
 	var func = function( data ) {
 			return ( "0" in arguments ? data : "no context" );
 		},
@@ -2914,10 +3158,12 @@ test( "simple context variables with function", function() {
 	
 	strictEqual( react( "ctxtVar = ctxtVar{ f }" ), false, "ctxtVar itself cannot hold a context and evaluates it: react( \"ctxtVar = ctxtVar{ f }\" )" );
 	
-	react( "delete ctxtVar" );
+	react( "delete ctxtVar; delete x; delete f" );
 } );
 
 test( "complex context variable with function", function() {
+	var f = react.leak( "f = false" );
+	
 	var func = function( data ) {
 			return ( "0" in arguments ? data : "no context" );
 		},
@@ -2939,6 +3185,10 @@ test( "complex context variable with function", function() {
 } );
 
 test( "complex context variable with simple context variable", function() {
+	var t = react.leak( "t = true" ),
+		f = react.leak( "f = false" ),
+		foo  = react.leak( "foo = 'foo'" );
+	
 	var func = function( data ) {
 			return ( "0" in arguments ? data : "noCtxt" );
 		};
@@ -2974,10 +3224,14 @@ test( "complex context variable with simple context variable", function() {
 	strictEqual( react( "cmplCtxtVar{ t }" ), "truefalse to the max!", "complex var in custom context: react( \"cmplCtxtVar{ t }\" )" );
 	strictEqual( react( "cmplCtxtVar{ 'literal' }" ), "literalfalse to the max!", "complex var in custom literal context: react( \"cmplCtxtVar{ 'literal' }\" )" );
 	
-	react( "delete cmplCtxtVar; delete ctxtVar;" );
+	react( "delete cmplCtxtVar; delete ctxtVar; delete foo; delete t; delete f" );
 } );
 
 test( "reactive behaviour to context changes", function() {
+	var t = react.leak( "t = true" ),
+		x = react.leak( "x = 2.6" ),
+		y = react.leak( "y = 7.4" );
+	
 	var sumHalf = function() {
 			var ret = 0, idx = arguments.length;
 			
