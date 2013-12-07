@@ -79,6 +79,9 @@
 			if ( typeof obj !== "object" || obj === null || obj.constructor === Array )
 				return false;
 			
+			if(obj.keys && obj.keys().length == 0)
+				return false;
+				
 			for ( var key in obj )
 				if ( key in obj )
 					return false;
@@ -88,6 +91,9 @@
 		countProps = function( obj, own ) {
 			var n = 0;
 			
+			if(obj.keys)
+				return obj.keys().length;
+				
 			for ( var key in obj )
 				if ( own ? obj.hasOwnProperty( key ) : key in obj )
 					n++;
@@ -1787,7 +1793,7 @@
 					"~" : true,
 					"?" : true,
 					"." : true,
-					"°" : true,
+					"ï¿½" : true,
 					"(" : true,
 					")" : true,
 					"[" : true,
